@@ -2,7 +2,7 @@
 main.py
 -------
 Entry point. Fetches all 4 APIs and routes each result
-to its own store function in db_store.py.
+to its own store function in horse_racing_db.py.
 """
 
 import logging
@@ -11,7 +11,7 @@ import os
 from dotenv import load_dotenv
 
 from api_fetcher import fetch_api_1, fetch_api_2, fetch_api_3, fetch_api_4, fetch_all
-from db_store import (
+from horse_racing_db import (
     ensure_database_and_table,
     store_records,       # API-1: meetings / races / runners
     store_api2_records,  # API-2: update with your actual function name
