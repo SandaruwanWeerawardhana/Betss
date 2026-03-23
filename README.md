@@ -1,4 +1,4 @@
-# Racing API to MySQL Scraper
+<h1 align="center">Racing API to MySQL Scraper</h1>
 
 A Python project that fetches racing data from an API and stores it in MySQL.
 
