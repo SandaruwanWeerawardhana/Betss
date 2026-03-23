@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS prices (
     timestamp_field BIGINT          NOT NULL DEFAULT 0,
     is_accurate     TINYINT(1)      NOT NULL DEFAULT 0,
     PRIMARY KEY (id),
+    UNIQUE KEY uq_price_rr_price_id (race_runner_id, price_id),
     CONSTRAINT fk_price_rr FOREIGN KEY (race_runner_id) REFERENCES race_runners (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
@@ -346,7 +347,20 @@ INSERT INTO prices (
     %s, %s,
     %s, %s, %s,
     %s, %s, %s, %s
-);
+)
+ON DUPLICATE KEY UPDATE
+    decimal_value=VALUES(decimal_value),
+    win_value=VALUES(win_value),
+    place_value=VALUES(place_value),
+    win_pool=VALUES(win_pool),
+    place_pool=VALUES(place_pool),
+    fraction_value=VALUES(fraction_value),
+    win_frac_value=VALUES(win_frac_value),
+    place_frac_value=VALUES(place_frac_value),
+    market_id=VALUES(market_id),
+    time_field=VALUES(time_field),
+    timestamp_field=VALUES(timestamp_field),
+    is_accurate=VALUES(is_accurate);
 """
 
 
@@ -408,6 +422,16 @@ def ensure_database_and_table():
         cursor.execute(CREATE_RACE_RUNNERS_TABLE)
         cursor.execute(CREATE_PRICES_TABLE)
         cursor.execute(CREATE_RESULTS_TABLE)
+
+        # Ensure the unique key used for price upserts exists.
+        # Note: if you already have duplicates in `prices`, adding this key will fail.
+        try:
+            cursor.execute(
+                "ALTER TABLE prices ADD UNIQUE KEY uq_price_rr_price_id (race_runner_id, price_id);"
+            )
+        except mysql.connector.Error as err:
+            # 1061: duplicate key name, 1068/others: already exists or cannot add.
+            log.debug(f"Skipping prices unique key creation: {err}")
 
         conn.commit()
         cursor.close()
