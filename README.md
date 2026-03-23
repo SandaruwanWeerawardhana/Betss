@@ -50,7 +50,10 @@ DB_USER=root
 DB_PASSWORD=
 DB_NAME=scraper_db
 
-API_URL=https://raci.com/api
+API_1_URL=https://
+API_2_URL=https://
+API_3_URL=https://
+API_4_URL=https://
 
 # 0 = run once and exit
 # >0 = polling mode, value is seconds between cycles
@@ -97,8 +100,11 @@ On startup, `ensure_database_and_table()` will:
 1. Create database `DB_NAME` if missing
 2. Create these tables if missing:
    - `meetings`
+   - `runners`
    - `races`
    - `race_runners`
+   - `prices`
+   - `results`
 
 Inserts use `ON DUPLICATE KEY UPDATE`, so reruns are safe and rows are updated when IDs already exist.
 
@@ -134,7 +140,7 @@ Then in VS Code, select the same interpreter:
 
 ### 3) API request fails
 
-- Check `API_URL` in `.env`
+- Check `API_1_URL` ... `API_4_URL` in `.env`
 - Confirm internet/network access
 - Inspect `scraper.log` for HTTP status and stack traces
 
@@ -142,7 +148,7 @@ Then in VS Code, select the same interpreter:
 
 1. `main.py` starts and loads `.env`
 2. `db_store.ensure_database_and_table()` ensures schema exists
-3. `api_fetcher.fetch_data()` downloads API payload
+3. `api_fetcher.fetch_all()` downloads API payload from up to 4 endpoints
 4. `db_store.store_records()` parses and upserts meetings/races/runners
 5. App exits or repeats based on `POLL_INTERVAL`
 

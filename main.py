@@ -1,8 +1,8 @@
 """
 main.py
 -------
-Entry point. Imports from api_fetcher and db_store,
-then coordinates the fetch-and-store cycle.
+Entry point. Fetches all 4 APIs and routes each result
+to its own store function in db_store.py.
 """
 
 import logging
@@ -10,8 +10,14 @@ import time
 import os
 from dotenv import load_dotenv
 
-from api_fetcher import fetch_data
-from db_store import ensure_database_and_table, store_records
+from api_fetcher import fetch_all
+from db_store import (
+    ensure_database_and_table,
+    store_records,       # API-1: meetings / races / runners
+    store_api2_records,  # API-2: update with your actual function name
+    store_api3_records,  # API-3: update with your actual function name
+    store_api4_records,  # API-4: update with your actual function name
+)
 
 load_dotenv()
 
@@ -30,8 +36,19 @@ log = logging.getLogger(__name__)
 
 
 def run_once():
-    records = fetch_data()
-    store_records(records)
+    results = fetch_all()
+
+    if results["api_1"]:
+        store_records(results["api_1"])
+
+    if results["api_2"]:
+        store_api2_records(results["api_2"])
+
+    if results["api_3"]:
+        store_api3_records(results["api_3"])
+
+    if results["api_4"]:
+        store_api4_records(results["api_4"])
 
 
 def main():
