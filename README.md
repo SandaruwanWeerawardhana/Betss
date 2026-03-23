@@ -1,0 +1,149 @@
+# Racing API to MySQL Scraper
+
+A Python project that fetches racing data from an API and stores it in MySQL.
+
+The app:
+- Calls an API endpoint and reads JSON records
+- Creates the database and tables automatically (if missing)
+- Upserts meetings, races, and race runners into MySQL
+- Supports single-run mode or polling mode
+- Logs to both console and `scraper.log`
+
+## Project Structure
+
+- `main.py` - Entry point. Coordinates fetch and store.
+- `api_fetcher.py` - API request logic.
+- `db_store.py` - MySQL schema setup and insert/upsert logic.
+- `.env` - Runtime configuration.
+- `scraper.log` - Runtime logs.
+
+## Prerequisites
+
+- Python 3.9+
+- MySQL Server 8+
+- A user with permission to create databases/tables
+
+## Python Dependencies
+
+Install these packages:
+
+```bash
+pip install requests python-dotenv mysql-connector-python
+```
+
+Optional `requirements.txt`:
+
+```txt
+requests>=2.31.0
+python-dotenv>=1.0.0
+mysql-connector-python>=8.0.0
+```
+
+## Environment Configuration
+
+Create `.env` in the project root with values like this:
+
+```env
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=scraper_db
+
+API_URL=https://raci.com/api
+
+# 0 = run once and exit
+# >0 = polling mode, value is seconds between cycles
+POLL_INTERVAL=0
+```
+
+Notes:
+- Keep `.env` as plain `KEY=VALUE` lines only.
+- Do not include markdown fences or shell commands inside `.env`.
+
+## Run the Project
+
+### Windows PowerShell
+
+```powershell
+cd d:\Project\Botss
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install requests python-dotenv mysql-connector-python
+python .\main.py
+```
+
+### Mac / Linux
+
+```bash
+cd /path/to/Botss
+python3 -m venv .venv
+source .venv/bin/activate
+pip install requests python-dotenv mysql-connector-python
+python main.py
+```
+
+## Runtime Modes
+
+`POLL_INTERVAL` controls execution mode:
+
+- `POLL_INTERVAL=0`: single-run mode (fetch/store once, then exit)
+- `POLL_INTERVAL=30`: polling mode (run every 30 seconds)
+
+## Database Behavior
+
+On startup, `ensure_database_and_table()` will:
+
+1. Create database `DB_NAME` if missing
+2. Create these tables if missing:
+   - `meetings`
+   - `races`
+   - `race_runners`
+
+Inserts use `ON DUPLICATE KEY UPDATE`, so reruns are safe and rows are updated when IDs already exist.
+
+## Logging
+
+The app logs to:
+
+- Console output
+- `scraper.log` file
+
+If something fails, check `scraper.log` first.
+
+## Common Issues
+
+### 1) Import "mysql.connector" could not be resolved
+
+This usually means the VS Code interpreter does not have `mysql-connector-python` installed.
+
+Fix:
+
+```bash
+pip install mysql-connector-python
+```
+
+Then in VS Code, select the same interpreter:
+- Command Palette -> Python: Select Interpreter
+
+### 2) MySQL access denied
+
+- Verify `DB_USER` and `DB_PASSWORD`
+- Ensure MySQL is running on `DB_HOST:DB_PORT`
+- Ensure user has DB create/table privileges
+
+### 3) API request fails
+
+- Check `API_URL` in `.env`
+- Confirm internet/network access
+- Inspect `scraper.log` for HTTP status and stack traces
+
+## How It Works (High Level)
+
+1. `main.py` starts and loads `.env`
+2. `db_store.ensure_database_and_table()` ensures schema exists
+3. `api_fetcher.fetch_data()` downloads API payload
+4. `db_store.store_records()` parses and upserts meetings/races/runners
+5. App exits or repeats based on `POLL_INTERVAL`
+
+
