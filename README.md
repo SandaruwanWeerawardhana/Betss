@@ -93,6 +93,28 @@ python main.py
 - `POLL_INTERVAL=0`: single-run mode (fetch/store once, then exit)
 - `POLL_INTERVAL=30`: polling mode (run every 30 seconds)
 
+### Per-API call gaps (recommended)
+
+If you want different time gaps for different data types, set `API_1_INTERVAL` ... `API_4_INTERVAL` (seconds).
+
+When **any** `API_*_INTERVAL` is > 0, the app switches to **scheduler mode** and calls each API on its own cadence.
+
+Example:
+
+```env
+API_1_INTERVAL=15   # live odds/prices
+API_2_INTERVAL=30   # race status
+API_3_INTERVAL=300  # meeting/race card
+API_4_INTERVAL=3600 # historical/reference
+```
+
+Recommended starting points:
+- Live race odds / prices: 10–15 seconds
+- Race status updates: 30 seconds
+- Meeting / race card info: 5 minutes
+- Results / settled races: 2 minutes
+- Historical / reference data: 1 hour (or once daily)
+
 ## Database Behavior
 
 On startup, `ensure_database_and_table()` will:
