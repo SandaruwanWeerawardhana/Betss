@@ -16,10 +16,10 @@ load_dotenv()
 # ─────────────────────────────────────────────
 # API ENDPOINT URLS  (set these in your .env)
 # ─────────────────────────────────────────────
-API_1_URL = os.getenv("API_1_URL", "")
-API_2_URL = os.getenv("API_2_URL", "")
-API_3_URL = os.getenv("API_3_URL", "")
-API_4_URL = os.getenv("API_4_URL", "")
+HORSE_API_1_URL = os.getenv("HORSE_API_1_URL", "")
+HORSE_API_2_URL = os.getenv("HORSE_API_2_URL", "")
+HORSE_API_3_URL = os.getenv("HORSE_API_3_URL", "")
+HORSE_API_4_URL = os.getenv("HORSE_API_4_URL", "")
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def fetch_api_1():
     Add any required headers or query params below.
     """
     return _get(
-        url=API_1_URL,
+        url=HORSE_API_1_URL,
         label="API-1 (Meetings)"
         # headers={"Authorization": "Bearer YOUR_TOKEN"},
         # params={"date": "2026-03-23"}
@@ -77,7 +77,7 @@ def fetch_api_2():
     Second API -- update label and params to match your endpoint.
     """
     return _get(
-        url=API_2_URL,
+        url=HORSE_API_2_URL,
         label="API-2"
         # headers={"x-api-key": "YOUR_KEY"},
     )
@@ -88,7 +88,7 @@ def fetch_api_3():
     Third API -- update label and params to match your endpoint.
     """
     return _get(
-        url=API_3_URL,
+        url=HORSE_API_3_URL,
         label="API-3"
     )
 
@@ -98,7 +98,7 @@ def fetch_api_4():
     Fourth API -- update label and params to match your endpoint.
     """
     return _get(
-        url=API_4_URL,
+        url=HORSE_API_4_URL,
         label="API-4"
     )
 

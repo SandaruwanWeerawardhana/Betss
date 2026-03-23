@@ -25,10 +25,10 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 0))
 
 # Optional: per-API intervals (seconds). If any of these is > 0, the scheduler
 # mode is used and each API is called on its own cadence.
-API_1_INTERVAL = int(os.getenv("API_1_INTERVAL", 0))
-API_2_INTERVAL = int(os.getenv("API_2_INTERVAL", 0))
-API_3_INTERVAL = int(os.getenv("API_3_INTERVAL", 0))
-API_4_INTERVAL = int(os.getenv("API_4_INTERVAL", 0))
+HORSE_API_1_INTERVAL = int(os.getenv("HORSE_API_1_INTERVAL", 0))
+HORSE_API_2_INTERVAL = int(os.getenv("HORSE_API_2_INTERVAL", 0))
+HORSE_API_3_INTERVAL = int(os.getenv("HORSE_API_3_INTERVAL", 0))
+HORSE_API_4_INTERVAL = int(os.getenv("HORSE_API_4_INTERVAL", 0))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,28 +62,28 @@ def _run_scheduler():
     tasks = [
         {
             "name": "API-1",
-            "interval": API_1_INTERVAL,
+            "interval": HORSE_API_1_INTERVAL,
             "fetch": fetch_api_1,
             "store": store_records,
             "next_run": time.monotonic(),
         },
         {
             "name": "API-2",
-            "interval": API_2_INTERVAL,
+            "interval": HORSE_API_2_INTERVAL,
             "fetch": fetch_api_2,
             "store": store_api2_records,
             "next_run": time.monotonic(),
         },
         {
             "name": "API-3",
-            "interval": API_3_INTERVAL,
+            "interval": HORSE_API_3_INTERVAL,
             "fetch": fetch_api_3,
             "store": store_api3_records,
             "next_run": time.monotonic(),
         },
         {
             "name": "API-4",
-            "interval": API_4_INTERVAL,
+            "interval": HORSE_API_4_INTERVAL,
             "fetch": fetch_api_4,
             "store": store_api4_records,
             "next_run": time.monotonic(),
@@ -124,7 +124,7 @@ def main():
 
     scheduler_mode = any(
         v > 0
-        for v in (API_1_INTERVAL, API_2_INTERVAL, API_3_INTERVAL, API_4_INTERVAL)
+        for v in (HORSE_API_1_INTERVAL, HORSE_API_2_INTERVAL, HORSE_API_3_INTERVAL, HORSE_API_4_INTERVAL)
     )
 
     if scheduler_mode:

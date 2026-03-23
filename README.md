@@ -95,17 +95,17 @@ python main.py
 
 ### Per-API call gaps (recommended)
 
-If you want different time gaps for different data types, set `API_1_INTERVAL` ... `API_4_INTERVAL` (seconds).
+If you want different time gaps for different data types, set `HORSE_API_1_INTERVAL` ... `HORSE_API_4_INTERVAL` (seconds).
 
-When **any** `API_*_INTERVAL` is > 0, the app switches to **scheduler mode** and calls each API on its own cadence.
+When **any** `HORSE_API_*_INTERVAL` is > 0, the app switches to **scheduler mode** and calls each API on its own cadence.
 
 Example:
 
 ```env
-API_1_INTERVAL=15   # live odds/prices
-API_2_INTERVAL=30   # race status
-API_3_INTERVAL=300  # meeting/race card
-API_4_INTERVAL=3600 # historical/reference
+HORSE_API_1_INTERVAL=15   # live odds/prices
+HORSE_API_2_INTERVAL=30   # race status
+HORSE_API_3_INTERVAL=300  # meeting/race card
+HORSE_API_4_INTERVAL=3600 # historical/reference
 ```
 
 Recommended starting points:
