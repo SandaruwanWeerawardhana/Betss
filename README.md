@@ -13,7 +13,7 @@ The app:
 
 - `main.py` - Entry point. Coordinates fetch and store.
 - `api_fetcher.py` - API request logic.
-- `db_store.py` - MySQL schema setup and insert/upsert logic.
+- `horse_racing_db.py` - MySQL schema setup and insert/upsert logic.
 - `.env` - Runtime configuration.
 - `scraper.log` - Runtime logs.
 
@@ -50,10 +50,10 @@ DB_USER=root
 DB_PASSWORD=
 DB_NAME=scraper_db
 
-API_1_URL=https://
-API_2_URL=https://
-API_3_URL=https://
-API_4_URL=https://
+HORSE_API_1_URL=https://
+HORSE_API_2_URL=https://
+HORSE_API_3_URL=https://
+HORSE_API_4_URL=https://
 
 # 0 = run once and exit
 # >0 = polling mode, value is seconds between cycles
@@ -162,16 +162,16 @@ Then in VS Code, select the same interpreter:
 
 ### 3) API request fails
 
-- Check `API_1_URL` ... `API_4_URL` in `.env`
+- Check `HORSE_API_1_URL` ... `HORSE_API_4_URL` in `.env`
 - Confirm internet/network access
 - Inspect `scraper.log` for HTTP status and stack traces
 
 ## How It Works (High Level)
 
 1. `main.py` starts and loads `.env`
-2. `db_store.ensure_database_and_table()` ensures schema exists
+2. `horse_racing_db.ensure_database_and_table()` ensures schema exists
 3. `api_fetcher.fetch_all()` downloads API payload from up to 4 endpoints
-4. `db_store.store_records()` parses and upserts meetings/races/runners
+4. `horse_racing_db.store_records()` parses and upserts meetings/races/runners
 5. App exits or repeats based on `POLL_INTERVAL`
 
 
