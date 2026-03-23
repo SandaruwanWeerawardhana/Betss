@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS meetings (
     going         VARCHAR(20)     NULL,
     is_evening_meeting TINYINT(1) NOT NULL DEFAULT 0,
     is_deleted    TINYINT(1)      NOT NULL DEFAULT 0,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
@@ -80,6 +82,8 @@ CREATE TABLE IF NOT EXISTS runners (
     claiming      VARCHAR(10)     NULL,
     owner         VARCHAR(100)    NULL,
     horse_farm    VARCHAR(100)    NULL,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
@@ -119,6 +123,8 @@ CREATE TABLE IF NOT EXISTS races (
     is_trio           TINYINT(1)      NOT NULL DEFAULT 0,
     is_settled        TINYINT(1)      NOT NULL DEFAULT 0,
     is_deleted        TINYINT(1)      NOT NULL DEFAULT 0,
+    created_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_race_meeting FOREIGN KEY (meeting_id) REFERENCES meetings (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -140,6 +146,8 @@ CREATE TABLE IF NOT EXISTS race_runners (
     fluc1           DECIMAL(10,2)   NOT NULL DEFAULT 0.00,
     fluc2           DECIMAL(10,2)   NOT NULL DEFAULT 0.00,
     race_source     TINYINT         NULL,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_rr_race   FOREIGN KEY (race_id)   REFERENCES races   (id),
     CONSTRAINT fk_rr_runner FOREIGN KEY (runner_id) REFERENCES runners (id)
@@ -164,6 +172,8 @@ CREATE TABLE IF NOT EXISTS prices (
     time_field      DATETIME        NULL,
     timestamp_field BIGINT          NOT NULL DEFAULT 0,
     is_accurate     TINYINT(1)      NOT NULL DEFAULT 0,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uq_price_rr_price_id (race_runner_id, price_id),
     CONSTRAINT fk_price_rr FOREIGN KEY (race_runner_id) REFERENCES race_runners (id)
@@ -186,6 +196,8 @@ CREATE TABLE IF NOT EXISTS results (
     jockey          VARCHAR(100)    NULL,
     race_source     TINYINT         NULL,
     is_deleted      TINYINT(1)      NOT NULL DEFAULT 0,
+    created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     CONSTRAINT fk_result_race   FOREIGN KEY (race_id)       REFERENCES races        (id),
     CONSTRAINT fk_result_runner FOREIGN KEY (runner_id)     REFERENCES runners      (id),
@@ -219,7 +231,8 @@ ON DUPLICATE KEY UPDATE
     date=VALUES(date),
     going=VALUES(going),
     is_evening_meeting=VALUES(is_evening_meeting),
-    is_deleted=VALUES(is_deleted);
+    is_deleted=VALUES(is_deleted),
+    updated_at=CURRENT_TIMESTAMP;
 """
 
 
@@ -245,7 +258,8 @@ ON DUPLICATE KEY UPDATE
     last_runs=VALUES(last_runs),
     claiming=VALUES(claiming),
     owner=VALUES(owner),
-    horse_farm=VALUES(horse_farm);
+    horse_farm=VALUES(horse_farm),
+    updated_at=CURRENT_TIMESTAMP;
 """
 
 
@@ -302,7 +316,8 @@ ON DUPLICATE KEY UPDATE
     is_tricast=VALUES(is_tricast),
     is_trio=VALUES(is_trio),
     is_settled=VALUES(is_settled),
-    is_deleted=VALUES(is_deleted);
+    is_deleted=VALUES(is_deleted),
+    updated_at=CURRENT_TIMESTAMP;
 """
 
 
@@ -332,7 +347,8 @@ ON DUPLICATE KEY UPDATE
     open_decimal=VALUES(open_decimal),
     fluc1=VALUES(fluc1),
     fluc2=VALUES(fluc2),
-    race_source=VALUES(race_source);
+    race_source=VALUES(race_source),
+    updated_at=CURRENT_TIMESTAMP;
 """
 
 
@@ -360,7 +376,8 @@ ON DUPLICATE KEY UPDATE
     market_id=VALUES(market_id),
     time_field=VALUES(time_field),
     timestamp_field=VALUES(timestamp_field),
-    is_accurate=VALUES(is_accurate);
+    is_accurate=VALUES(is_accurate),
+    updated_at=CURRENT_TIMESTAMP;
 """
 
 
@@ -386,7 +403,8 @@ ON DUPLICATE KEY UPDATE
     runner_number=VALUES(runner_number),
     jockey=VALUES(jockey),
     race_source=VALUES(race_source),
-    is_deleted=VALUES(is_deleted);
+    is_deleted=VALUES(is_deleted),
+    updated_at=CURRENT_TIMESTAMP;
 """
 
 
@@ -422,6 +440,41 @@ def ensure_database_and_table():
         cursor.execute(CREATE_RACE_RUNNERS_TABLE)
         cursor.execute(CREATE_PRICES_TABLE)
         cursor.execute(CREATE_RESULTS_TABLE)
+
+        # Backfill schema changes for existing databases.
+        # 1060 = duplicate column name (already exists).
+        for alter in (
+            "ALTER TABLE meetings ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE meetings ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE runners ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE runners ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE races ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE races ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE race_runners ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE race_runners ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE prices ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE prices ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE results ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
+            "ALTER TABLE results ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+        ):
+            try:
+                cursor.execute(alter)
+            except mysql.connector.Error as err:
+                log.debug(f"Skipping schema alter: {err}")
+
+        # Ensure updated_at has ON UPDATE CURRENT_TIMESTAMP in older schemas.
+        for modify in (
+            "ALTER TABLE meetings MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE runners MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE races MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE race_runners MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE prices MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE results MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+        ):
+            try:
+                cursor.execute(modify)
+            except mysql.connector.Error as err:
+                log.debug(f"Skipping schema modify: {err}")
 
         # Ensure the unique key used for price upserts exists.
         # Note: if you already have duplicates in `prices`, adding this key will fail.
