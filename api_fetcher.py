@@ -21,6 +21,11 @@ HORSE_API_2_URL = os.getenv("HORSE_API_2_URL", "")
 HORSE_API_3_URL = os.getenv("HORSE_API_3_URL", "")
 HORSE_API_4_URL = os.getenv("HORSE_API_4_URL", "")
 
+# Per-race detail templates (optional)
+RACE_RUNNERS_BY_RACE_URL_TEMPLATE = os.getenv("RACE_RUNNERS_BY_RACE_URL_TEMPLATE", "")
+TODAY_MEETING_DATA_BY_ID_URL_TEMPLATE = os.getenv("TODAY_MEETING_DATA_BY_ID_URL_TEMPLATE", "")
+RACE_DETAILS_BY_ID_URL_TEMPLATE = os.getenv("RACE_DETAILS_BY_ID_URL_TEMPLATE", "")
+
 log = logging.getLogger(__name__)
 
 
@@ -52,6 +57,14 @@ def _get(url, headers=None, params=None, label="API"):
     records = data if isinstance(data, list) else [data]
     log.info(f"{label}: Received {len(records)} record(s).")
     return records
+
+
+def _format_url_template(template: str, race_id: int) -> str:
+    if not template:
+        return ""
+    if "{raceId}" in template:
+        return template.format(raceId=race_id)
+    return template.rstrip("/") + f"/{race_id}"
 
 
 # ─────────────────────────────────────────────
@@ -116,3 +129,23 @@ def fetch_all():
         "api_3": fetch_api_3(),
         "api_4": fetch_api_4(),
     }
+
+
+# ─────────────────────────────────────────────
+# PER-RACE DETAIL FETCHERS
+# ─────────────────────────────────────────────
+
+
+def fetch_race_runners_by_race(race_id: int):
+    url = _format_url_template(RACE_RUNNERS_BY_RACE_URL_TEMPLATE, race_id)
+    return _get(url=url, label=f"API (RaceRunnersByRace {race_id})")
+
+
+def fetch_today_meeting_data_by_id(race_id: int):
+    url = _format_url_template(TODAY_MEETING_DATA_BY_ID_URL_TEMPLATE, race_id)
+    return _get(url=url, label=f"API (TodayMeetingDataById {race_id})")
+
+
+def fetch_race_details_by_id(race_id: int):
+    url = _format_url_template(RACE_DETAILS_BY_ID_URL_TEMPLATE, race_id)
+    return _get(url=url, label=f"API (RaceDetailsById {race_id})")
