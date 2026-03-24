@@ -828,6 +828,33 @@ def store_records(records):
         )
         return runner_pk
 
+    def _upsert_runner_minimal(cursor, runner_pk: int, runner_name: str | None = None):
+        if runner_pk is None:
+            return None
+        name = (runner_name or "").strip() if isinstance(runner_name, str) else ""
+        if not name:
+            name = f"Runner-{runner_pk}"
+
+        cursor.execute(
+            INSERT_RUNNER_SQL,
+            (
+                runner_pk,
+                str(runner_pk),
+                name,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        )
+        return runner_pk
+
     def _upsert_race_runner_from_rr(cursor, rr: dict, race_id: int, runner_pk: int):
         rr_id = _to_int(rr.get("id") or rr.get("raceRunnerId") or rr.get("raceRunnerID") or rr.get("raceRunnerId"))
         if rr_id is None:
@@ -853,6 +880,41 @@ def store_records(records):
                 rr.get("fluc1Frac"),
                 rr.get("fluc2Frac"),
                 _to_int(rr.get("raceSource")),
+            ),
+        )
+        return rr_id
+
+    def _upsert_race_runner_minimal(
+        cursor,
+        rr_id: int,
+        race_id: int,
+        runner_pk: int,
+        *,
+        number: int | None = None,
+        race_source: int | None = None,
+    ):
+        if rr_id is None or race_id is None or runner_pk is None:
+            return None
+        cursor.execute(
+            INSERT_RACE_RUNNER_SQL,
+            (
+                rr_id,
+                race_id,
+                runner_pk,
+                None,
+                number,
+                None,
+                0,
+                0,
+                None,
+                None,
+                0.0,
+                None,
+                0.0,
+                0.0,
+                None,
+                None,
+                race_source,
             ),
         )
         return rr_id
@@ -939,6 +1001,49 @@ def store_records(records):
         )
         return 1
 
+    def _upsert_result_from_object(cursor, result: dict, *, default_race_source: int | None = None) -> int:
+        if not isinstance(result, dict) or not result:
+            return 0
+
+        res_id = _to_int(result.get("id"))
+        pos = _to_int(result.get("position"))
+        race_id = _to_int(result.get("raceId") or result.get("race_id"))
+        runner_pk = _to_int(result.get("runnerId") or result.get("runner_id"))
+        rr_id = _to_int(result.get("raceRunnerId") or result.get("race_runner_id"))
+
+        if res_id is None or pos is None or race_id is None or runner_pk is None or rr_id is None:
+            return 0
+
+        _upsert_runner_minimal(cursor, runner_pk, runner_name=result.get("runnerName"))
+        _upsert_race_runner_minimal(
+            cursor,
+            rr_id=rr_id,
+            race_id=race_id,
+            runner_pk=runner_pk,
+            number=_to_int(result.get("raceRunnerNumber") or result.get("runnerNumber")),
+            race_source=_to_int(result.get("raceSource") or default_race_source),
+        )
+
+        cursor.execute(
+            INSERT_RESULT_SQL,
+            (
+                res_id,
+                result.get("resultId"),
+                race_id,
+                runner_pk,
+                rr_id,
+                pos,
+                result.get("win") or 0.0,
+                result.get("place") or 0.0,
+                result.get("odd"),
+                _to_int(result.get("runnerNumber")),
+                result.get("jockey"),
+                _to_int(result.get("raceSource") or default_race_source),
+                _bool_int(result.get("isDeleted"), 0),
+            ),
+        )
+        return 1
+
     def _store_meeting_payload(cursor, meetings):
         totals = {"meetings": 0, "races": 0, "runners": 0, "race_runners": 0, "prices": 0, "results": 0}
 
@@ -957,6 +1062,13 @@ def store_records(records):
                 if race_id is None:
                     continue
                 totals["races"] += 1
+
+                for result in (race.get("results") or []):
+                    totals["results"] += _upsert_result_from_object(
+                        cursor,
+                        result,
+                        default_race_source=_to_int(race.get("source")),
+                    )
 
                 for rr in race.get("raceRunners", []) or []:
                     if not isinstance(rr, dict):
@@ -1002,6 +1114,13 @@ def store_records(records):
             if race_id is None:
                 continue
             totals["races"] += 1
+
+            for result in (race.get("results") or []):
+                totals["results"] += _upsert_result_from_object(
+                    cursor,
+                    result,
+                    default_race_source=_to_int(race.get("source")),
+                )
 
             for rr in race.get("raceRunners", []) or []:
                 if not isinstance(rr, dict):

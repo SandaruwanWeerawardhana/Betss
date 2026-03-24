@@ -8,6 +8,7 @@ to its own store function in horse_racing_db.py.
 import logging
 import time
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 from api_fetcher import (
@@ -17,6 +18,7 @@ from api_fetcher import (
     fetch_api_4,
     fetch_all,
     fetch_race_runners_by_race,
+    fetch_today_meeting_data_by_id,
 )
 from horse_racing_db import (
     ensure_database_and_table,
@@ -34,6 +36,12 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 0))
 
 # Per-race detail calls (driven by race ids from the `races` table)
 FETCH_RACE_DETAILS = os.getenv("FETCH_RACE_DETAILS", "0").strip().lower() in ("1", "true", "yes", "y")
+FETCH_TODAY_MEETING_DATA_BY_ID = os.getenv("FETCH_TODAY_MEETING_DATA_BY_ID", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+)
 MAX_RACE_IDS_PER_CYCLE = int(os.getenv("MAX_RACE_IDS_PER_CYCLE", 50))
 FETCH_ALL_RACE_IDS = os.getenv("FETCH_ALL_RACE_IDS", "0").strip().lower() in ("1", "true", "yes", "y")
 RACE_ID_BATCH_SIZE = int(os.getenv("RACE_ID_BATCH_SIZE", 500))
@@ -62,19 +70,25 @@ def _fetch_and_store_race_runners_for_races(race_ids):
 
 
 def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: bool | None = None):
-    if not FETCH_RACE_DETAILS:
+    if not FETCH_RACE_DETAILS and not FETCH_TODAY_MEETING_DATA_BY_ID:
         return
     if not race_ids:
-        log.warning("No race ids available; skipping GetRaceRunnersByRace calls.")
+        log.warning("No race ids available; skipping per-race detail calls.")
         return
 
     effective_fetch_all = FETCH_ALL_RACE_IDS if treat_as_all is None else bool(treat_as_all)
 
     count = 0
     if effective_fetch_all:
-        log.info("Fetching race runner details for ALL race ids (one-by-one).")
+        log.info("Fetching per-race details for ALL race ids (one-by-one).")
     else:
-        log.info("Fetching race runner details for up to %s race(s).", MAX_RACE_IDS_PER_CYCLE)
+        log.info("Fetching per-race details for up to %s race(s).", MAX_RACE_IDS_PER_CYCLE)
+
+    use_parallel_per_race = bool(FETCH_TODAY_MEETING_DATA_BY_ID and FETCH_RACE_DETAILS)
+
+    executor = None
+    if use_parallel_per_race:
+        executor = ThreadPoolExecutor(max_workers=2)
 
     for race_id in race_ids:
         if race_id is None:
@@ -88,12 +102,43 @@ def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: 
         if not effective_fetch_all and MAX_RACE_IDS_PER_CYCLE > 0 and count > MAX_RACE_IDS_PER_CYCLE:
             break
 
+        meeting_payload = None
+        rr_payload = None
+
+        if use_parallel_per_race and executor is not None:
+            futures = {
+                "today_meeting": executor.submit(fetch_today_meeting_data_by_id, race_id),
+                "race_runners": executor.submit(fetch_race_runners_by_race, race_id),
+            }
+
+            for name, fut in futures.items():
+                try:
+                    payload = fut.result()
+                    if name == "today_meeting":
+                        meeting_payload = payload
+                    else:
+                        rr_payload = payload
+                except Exception as err:
+                    log.error("Per-race fetch failed (%s) for race_id=%s: %s", name, race_id, err)
+        else:
+            try:
+                if FETCH_TODAY_MEETING_DATA_BY_ID:
+                    meeting_payload = fetch_today_meeting_data_by_id(race_id)
+                if FETCH_RACE_DETAILS:
+                    rr_payload = fetch_race_runners_by_race(race_id)
+            except Exception as err:
+                log.error("Per-race fetch failed for race_id=%s: %s", race_id, err)
+
         try:
-            rr = fetch_race_runners_by_race(race_id)
-            if rr:
-                store_records(rr)
+            if meeting_payload:
+                store_records(meeting_payload)
+            if rr_payload:
+                store_records(rr_payload)
         except Exception as err:
-            log.error("GetRaceRunnersByRace failed for race_id=%s: %s", race_id, err)
+            log.error("Per-race store failed for race_id=%s: %s", race_id, err)
+
+    if executor is not None:
+        executor.shutdown(wait=True)
 
 
 def run_once():
@@ -200,6 +245,16 @@ def _run_scheduler():
 
 def main():
     ensure_database_and_table()
+
+    log.info(
+        "Per-race settings: FETCH_RACE_DETAILS=%s, FETCH_TODAY_MEETING_DATA_BY_ID=%s, FETCH_ALL_RACE_IDS=%s, MAX_RACE_IDS_PER_CYCLE=%s",
+        int(FETCH_RACE_DETAILS),
+        int(FETCH_TODAY_MEETING_DATA_BY_ID),
+        int(FETCH_ALL_RACE_IDS),
+        MAX_RACE_IDS_PER_CYCLE,
+    )
+    if not FETCH_TODAY_MEETING_DATA_BY_ID:
+        log.info("TodayMeetingDataById calls are disabled (set FETCH_TODAY_MEETING_DATA_BY_ID=1 to enable).")
 
     scheduler_mode = any(
         v > 0
