@@ -18,6 +18,7 @@ from api_fetcher import (
     fetch_api_4,
     fetch_all,
     fetch_race_runners_by_race,
+    fetch_race_details_by_id,
     fetch_today_meeting_data_by_id,
 )
 from horse_racing_db import (
@@ -37,6 +38,12 @@ POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 0))
 # Per-race detail calls (driven by race ids from the `races` table)
 FETCH_RACE_DETAILS = os.getenv("FETCH_RACE_DETAILS", "0").strip().lower() in ("1", "true", "yes", "y")
 FETCH_TODAY_MEETING_DATA_BY_ID = os.getenv("FETCH_TODAY_MEETING_DATA_BY_ID", "0").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+)
+FETCH_RACE_DETAILS_BY_ID = os.getenv("FETCH_RACE_DETAILS_BY_ID", "0").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -70,7 +77,7 @@ def _fetch_and_store_race_runners_for_races(race_ids):
 
 
 def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: bool | None = None):
-    if not FETCH_RACE_DETAILS and not FETCH_TODAY_MEETING_DATA_BY_ID:
+    if not FETCH_RACE_DETAILS and not FETCH_TODAY_MEETING_DATA_BY_ID and not FETCH_RACE_DETAILS_BY_ID:
         return
     if not race_ids:
         log.warning("No race ids available; skipping per-race detail calls.")
@@ -84,11 +91,22 @@ def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: 
     else:
         log.info("Fetching per-race details for up to %s race(s).", MAX_RACE_IDS_PER_CYCLE)
 
-    use_parallel_per_race = bool(FETCH_TODAY_MEETING_DATA_BY_ID and FETCH_RACE_DETAILS)
+    enabled_fetchers = []
+    if FETCH_TODAY_MEETING_DATA_BY_ID:
+        enabled_fetchers.append(("today_meeting", fetch_today_meeting_data_by_id))
+    if FETCH_RACE_DETAILS:
+        enabled_fetchers.append(("race_runners", fetch_race_runners_by_race))
+    if FETCH_RACE_DETAILS_BY_ID:
+        enabled_fetchers.append(("race_details", fetch_race_details_by_id))
+
+    executor_mode = "parallel" if len(enabled_fetchers) > 1 else "sequential"
+    if len(enabled_fetchers) > 0:
+        endpoint_names = ", ".join([name for name, _ in enabled_fetchers])
+        log.info("Per-race mode: %s execution of [%s]", executor_mode, endpoint_names)
 
     executor = None
-    if use_parallel_per_race:
-        executor = ThreadPoolExecutor(max_workers=2)
+    if len(enabled_fetchers) > 1:
+        executor = ThreadPoolExecutor(max_workers=len(enabled_fetchers))
 
     for race_id in race_ids:
         if race_id is None:
@@ -102,43 +120,41 @@ def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: 
         if not effective_fetch_all and MAX_RACE_IDS_PER_CYCLE > 0 and count > MAX_RACE_IDS_PER_CYCLE:
             break
 
-        meeting_payload = None
-        rr_payload = None
+        payloads: dict[str, object] = {}
 
-        if use_parallel_per_race and executor is not None:
-            futures = {
-                "today_meeting": executor.submit(fetch_today_meeting_data_by_id, race_id),
-                "race_runners": executor.submit(fetch_race_runners_by_race, race_id),
-            }
-
+        if executor is not None:
+            log.info("Race %s: fetching %s endpoints in parallel", race_id, len(enabled_fetchers))
+            futures = {name: executor.submit(fn, race_id) for (name, fn) in enabled_fetchers}
             for name, fut in futures.items():
                 try:
-                    payload = fut.result()
-                    if name == "today_meeting":
-                        meeting_payload = payload
-                    else:
-                        rr_payload = payload
+                    payloads[name] = fut.result()
+                    log.debug("Race %s: %s fetch completed", race_id, name)
                 except Exception as err:
                     log.error("Per-race fetch failed (%s) for race_id=%s: %s", name, race_id, err)
         else:
-            try:
-                if FETCH_TODAY_MEETING_DATA_BY_ID:
-                    meeting_payload = fetch_today_meeting_data_by_id(race_id)
-                if FETCH_RACE_DETAILS:
-                    rr_payload = fetch_race_runners_by_race(race_id)
-            except Exception as err:
-                log.error("Per-race fetch failed for race_id=%s: %s", race_id, err)
+            for name, fn in enabled_fetchers:
+                try:
+                    payloads[name] = fn(race_id)
+                    log.debug("Race %s: %s fetch completed", race_id, name)
+                except Exception as err:
+                    log.error("Per-race fetch failed (%s) for race_id=%s: %s", name, race_id, err)
 
         try:
-            if meeting_payload:
-                store_records(meeting_payload)
-            if rr_payload:
-                store_records(rr_payload)
+            stored_count = 0
+            for name in ("today_meeting", "race_details", "race_runners"):
+                payload = payloads.get(name)
+                if payload:
+                    store_records(payload)
+                    stored_count += 1
+            if stored_count > 0:
+                log.info("Race %s: stored %s payload(s)", race_id, stored_count)
         except Exception as err:
             log.error("Per-race store failed for race_id=%s: %s", race_id, err)
 
     if executor is not None:
         executor.shutdown(wait=True)
+
+    log.info("Per-race detail fetch complete: processed %s race(s).", count)
 
 
 def run_once():
@@ -247,14 +263,17 @@ def main():
     ensure_database_and_table()
 
     log.info(
-        "Per-race settings: FETCH_RACE_DETAILS=%s, FETCH_TODAY_MEETING_DATA_BY_ID=%s, FETCH_ALL_RACE_IDS=%s, MAX_RACE_IDS_PER_CYCLE=%s",
+        "Per-race settings: FETCH_RACE_DETAILS=%s, FETCH_TODAY_MEETING_DATA_BY_ID=%s, FETCH_RACE_DETAILS_BY_ID=%s, FETCH_ALL_RACE_IDS=%s, MAX_RACE_IDS_PER_CYCLE=%s",
         int(FETCH_RACE_DETAILS),
         int(FETCH_TODAY_MEETING_DATA_BY_ID),
+        int(FETCH_RACE_DETAILS_BY_ID),
         int(FETCH_ALL_RACE_IDS),
         MAX_RACE_IDS_PER_CYCLE,
     )
     if not FETCH_TODAY_MEETING_DATA_BY_ID:
         log.info("TodayMeetingDataById calls are disabled (set FETCH_TODAY_MEETING_DATA_BY_ID=1 to enable).")
+    if not FETCH_RACE_DETAILS_BY_ID:
+        log.info("RaceDetailsById calls are disabled (set FETCH_RACE_DETAILS_BY_ID=1 to enable).")
 
     scheduler_mode = any(
         v > 0
