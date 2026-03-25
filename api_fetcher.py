@@ -25,6 +25,7 @@ HARNESS_API_2_URL = os.getenv("HARNESS_API_2_URL", "")
 HARNESS_API_3_URL = os.getenv("HARNESS_API_3_URL", "")
 GRAYHOUND_API_1_URL = os.getenv("GRAYHOUND_API_1_URL", "")
 GRAYHOUND_API_2_URL = os.getenv("GRAYHOUND_API_2_URL", "")
+GRAYHOUND_API_3_URL = os.getenv("GRAYHOUND_API_3_URL", "")
 
 # Per-race detail templates (optional)
 RACE_RUNNERS_BY_RACE_URL_TEMPLATE = os.getenv("RACE_RUNNERS_BY_RACE_URL_TEMPLATE", "")
@@ -161,6 +162,14 @@ def fetch_api_9():
     )
 
 
+def fetch_api_10():
+    """Featured races for Greyhound (DG) - future."""
+    return _get(
+        url=GRAYHOUND_API_3_URL,
+        label="API-10 (DG Future)",
+    )
+
+
 # ─────────────────────────────────────────────
 # FETCH ALL
 # Returns a dict so main.py knows which data
@@ -178,6 +187,7 @@ def fetch_all():
         "api_7": fetch_api_7(),
         "api_8": fetch_api_8(),
         "api_9": fetch_api_9(),
+        "api_10": fetch_api_10(),
     }
 
 

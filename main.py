@@ -21,6 +21,7 @@ from api_fetcher import (
     fetch_api_7,
     fetch_api_8,
     fetch_api_9,
+    fetch_api_10,
     fetch_all,
     fetch_race_runners_by_race,
     fetch_race_details_by_id,
@@ -36,7 +37,7 @@ from horse_racing_db import (
     iter_race_ids,
 )
 
-load_dotenv()
+load_dotenv(override=True)
 
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", 0))
 
@@ -68,9 +69,9 @@ HAENESS_API_1_INTERVAL = int(os.getenv("HAENESS_API_1_INTERVAL", 0))
 HARNESS_API_2_INTERVAL = int(os.getenv("HARNESS_API_2_INTERVAL", 0))
 HARNESS_API_3_INTERVAL = int(os.getenv("HARNESS_API_3_INTERVAL", 0))
 
-# Greyhound (DG)
 GRAYHOUND_API_1_INTERVAL = int(os.getenv("GRAYHOUND_API_1_INTERVAL", 0))
 GRAYHOUND_API_2_INTERVAL = int(os.getenv("GRAYHOUND_API_2_INTERVAL", 0))
+GRAYHOUND_API_3_INTERVAL = int(os.getenv("GRAYHOUND_API_3_INTERVAL", 0))
 
 
 
@@ -201,6 +202,9 @@ def run_once():
     if results.get("api_9"):
         store_records(results["api_9"])
 
+    if results.get("api_10"):
+        store_records(results["api_10"])
+
     # After featured data is stored, read race ids from DB and fetch runners.
     try:
         if FETCH_ALL_RACE_IDS:
@@ -279,6 +283,13 @@ def _run_scheduler():
             "store": store_records,
             "next_run": time.monotonic(),
         },
+        {
+            "name": "API-10 (DG Future)",
+            "interval": GRAYHOUND_API_3_INTERVAL,
+            "fetch": fetch_api_10,
+            "store": store_records,
+            "next_run": time.monotonic(),
+        },
     ]
 
     enabled = [t for t in tasks if t["interval"] > 0]
@@ -351,6 +362,7 @@ def main():
             HARNESS_API_3_INTERVAL,
             GRAYHOUND_API_1_INTERVAL,
             GRAYHOUND_API_2_INTERVAL,
+            GRAYHOUND_API_3_INTERVAL,
         )
     )
 
