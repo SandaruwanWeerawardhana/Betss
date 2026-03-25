@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS races (
     race_number       TINYINT         NULL,
     start_time        DATETIME        NULL,
     start_time_utc    DATETIME        NULL,
+    section           VARCHAR(20)     NULL,
     results_fetched_at DATETIME        NULL,
     results_fetch_error VARCHAR(500)   NULL,
     course_type       CHAR(2)         NULL,
@@ -273,7 +274,7 @@ ON DUPLICATE KEY UPDATE
 INSERT_RACE_SQL = """
 INSERT INTO races (
     id, meeting_id, race_id, race_name, race_number,
-    start_time, start_time_utc, course_type, distance,
+    start_time, start_time_utc, section, course_type, distance,
     no_of_runners, eachway_places, expected_places, is_handicap,
     off_time, off_time_utc, status, surface,
     progress_code, progress_message, place_config_id,
@@ -283,7 +284,7 @@ INSERT INTO races (
     is_settled, is_deleted
 ) VALUES (
     %s, %s, %s, %s, %s,
-    %s, %s, %s, %s,
+    %s, %s, %s, %s, %s,
     %s, %s, %s, %s,
     %s, %s, %s, %s,
     %s, %s, %s,
@@ -299,6 +300,7 @@ ON DUPLICATE KEY UPDATE
     race_number=VALUES(race_number),
     start_time=VALUES(start_time),
     start_time_utc=VALUES(start_time_utc),
+    section=COALESCE(VALUES(section), section),
     course_type=VALUES(course_type),
     distance=VALUES(distance),
     no_of_runners=VALUES(no_of_runners),
@@ -627,6 +629,7 @@ def ensure_database_and_table():
             "ALTER TABLE runners ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE races ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
             "ALTER TABLE races ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE races ADD COLUMN section VARCHAR(20) NULL;",
             "ALTER TABLE races ADD COLUMN results_fetched_at DATETIME NULL;",
             "ALTER TABLE races ADD COLUMN results_fetch_error VARCHAR(500) NULL;",
             "ALTER TABLE race_runners ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
@@ -748,7 +751,7 @@ def _bool_int(value, default: int = 0) -> int:
 # ─────────────────────────────────────────────
 
 
-def store_records(records):
+def store_records(records, *, section: str | None = None):
     """Stores data from multiple payload shapes into the same tables.
 
     Supported shapes:
@@ -820,7 +823,7 @@ def store_records(records):
         )
         return meeting_id
 
-    def _upsert_race_from_object(cursor, race: dict, meeting_id: int):
+    def _upsert_race_from_object(cursor, race: dict, meeting_id: int, *, section_value: str | None = None):
         race_pk = _to_int(race.get("id") or race.get("raceId") or race.get("race_id"))
         if race_pk is None:
             return None
@@ -835,6 +838,7 @@ def store_records(records):
                 _to_int(race.get("raceNumber")),
                 _parse_dt(race.get("startTime")),
                 _parse_dt(race.get("startTimeUtc")),
+                section_value,
                 race.get("courseType"),
                 race.get("distance"),
                 _to_int(race.get("noOfRunners")),
@@ -864,7 +868,7 @@ def store_records(records):
         )
         return race_pk
 
-    def _upsert_race_minimal(cursor, race_id: int, meeting_id: int):
+    def _upsert_race_minimal(cursor, race_id: int, meeting_id: int, *, section_value: str | None = None):
         cursor.execute(
             INSERT_RACE_SQL,
             (
@@ -875,6 +879,7 @@ def store_records(records):
                 None,
                 None,
                 None,
+                section_value,
                 None,
                 None,
                 None,
@@ -1169,7 +1174,7 @@ def store_records(records):
         )
         return 1
 
-    def _store_meeting_payload(cursor, meetings):
+    def _store_meeting_payload(cursor, meetings, *, section_value: str | None = None):
         totals = {"meetings": 0, "races": 0, "runners": 0, "race_runners": 0, "prices": 0, "results": 0}
 
         for meeting in meetings:
@@ -1183,7 +1188,7 @@ def store_records(records):
             for race in meeting.get("races", []) or []:
                 if not isinstance(race, dict):
                     continue
-                race_id = _upsert_race_from_object(cursor, race, meeting_id)
+                race_id = _upsert_race_from_object(cursor, race, meeting_id, section_value=section_value)
                 if race_id is None:
                     continue
                 totals["races"] += 1
@@ -1213,7 +1218,7 @@ def store_records(records):
 
         return totals
 
-    def _store_race_payload(cursor, races):
+    def _store_race_payload(cursor, races, *, section_value: str | None = None):
         totals = {"meetings": 0, "races": 0, "runners": 0, "race_runners": 0, "prices": 0, "results": 0}
 
         for race in races:
@@ -1256,7 +1261,7 @@ def store_records(records):
             )
             totals["meetings"] += 1
 
-            race_id = _upsert_race_from_object(cursor, race, meeting_id)
+            race_id = _upsert_race_from_object(cursor, race, meeting_id, section_value=section_value)
             if race_id is None:
                 continue
             totals["races"] += 1
@@ -1286,7 +1291,7 @@ def store_records(records):
 
         return totals
 
-    def _store_race_runner_detail_payload(cursor, race_runners):
+    def _store_race_runner_detail_payload(cursor, race_runners, *, section_value: str | None = None):
         totals = {"meetings": 0, "races": 0, "runners": 0, "race_runners": 0, "prices": 0, "results": 0}
 
         for rr in race_runners:
@@ -1316,8 +1321,8 @@ def store_records(records):
                 "offTime": rr.get("offtime") or rr.get("offTime"),
                 "source": rr.get("raceSource"),
             }
-            if _upsert_race_from_object(cursor, race_obj, meeting_id) is None:
-                _upsert_race_minimal(cursor, race_id=race_id, meeting_id=meeting_id)
+            if _upsert_race_from_object(cursor, race_obj, meeting_id, section_value=section_value) is None:
+                _upsert_race_minimal(cursor, race_id=race_id, meeting_id=meeting_id, section_value=section_value)
             totals["races"] += 1
 
             runner_pk = _upsert_runner_from_rr(cursor, rr)
@@ -1363,11 +1368,11 @@ def store_records(records):
 
     try:
         if payload_kind == "meetings":
-            totals = _store_meeting_payload(cursor, records)
+            totals = _store_meeting_payload(cursor, records, section_value=section)
         elif payload_kind == "races":
-            totals = _store_race_payload(cursor, records)
+            totals = _store_race_payload(cursor, records, section_value=section)
         elif payload_kind == "race_runners":
-            totals = _store_race_runner_detail_payload(cursor, records)
+            totals = _store_race_runner_detail_payload(cursor, records, section_value=section)
         else:
             log.warning("Unrecognized payload shape; nothing stored.")
             totals = {"meetings": 0, "races": 0, "runners": 0, "race_runners": 0, "prices": 0, "results": 0}
@@ -1394,13 +1399,13 @@ def store_records(records):
 
 
 # Keep main.py working: treat API-2/3/4 as the same payload shape.
-def store_api2_records(records):
-    store_records(records)
+def store_api2_records(records, *, section: str | None = None):
+    store_records(records, section=section)
 
 
-def store_api3_records(records):
-    store_records(records)
+def store_api3_records(records, *, section: str | None = None):
+    store_records(records, section=section)
 
 
-def store_api4_records(records):
-    store_records(records)
+def store_api4_records(records, *, section: str | None = None):
+    store_records(records, section=section)

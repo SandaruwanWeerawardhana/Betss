@@ -95,6 +95,8 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
+RACES_SECTION_RACING = "RACING"
+
 
 def _fetch_and_store_race_runners_for_races(race_ids):
     return _fetch_and_store_race_runners_for_races_internal(race_ids)
@@ -244,34 +246,34 @@ def run_once():
     results = fetch_all()
 
     if results["api_1"]:
-        store_records(results["api_1"])
+        store_records(results["api_1"], section=RACES_SECTION_RACING)
 
     if results["api_2"]:
-        store_api2_records(results["api_2"])
+        store_api2_records(results["api_2"], section=RACES_SECTION_RACING)
 
     if results["api_3"]:
-        store_api3_records(results["api_3"])
+        store_api3_records(results["api_3"], section=RACES_SECTION_RACING)
 
     if results["api_4"]:
-        store_api4_records(results["api_4"])
+        store_api4_records(results["api_4"], section=RACES_SECTION_RACING)
 
     if results.get("api_5"):
-        store_records(results["api_5"])
+        store_records(results["api_5"], section=RACES_SECTION_RACING)
 
     if results.get("api_6"):
-        store_records(results["api_6"])
+        store_records(results["api_6"], section=RACES_SECTION_RACING)
 
     if results.get("api_7"):
-        store_records(results["api_7"])
+        store_records(results["api_7"], section=RACES_SECTION_RACING)
 
     if results.get("api_8"):
-        store_records(results["api_8"])
+        store_records(results["api_8"], section=RACES_SECTION_RACING)
 
     if results.get("api_9"):
-        store_records(results["api_9"])
+        store_records(results["api_9"], section=RACES_SECTION_RACING)
 
     if results.get("api_10"):
-        store_records(results["api_10"])
+        store_records(results["api_10"], section=RACES_SECTION_RACING)
 
 
 def _timezone_for_country_code(country_code: str | None) -> str:
@@ -354,16 +356,16 @@ def _run_scheduler():
             log.error("%s error: %s", name, err)
 
     tasks = [
-        ("API-1", HORSE_API_1_INTERVAL, fetch_api_1, store_records),
-        ("API-2", HORSE_API_2_INTERVAL, fetch_api_2, store_api2_records),
-        ("API-3", HORSE_API_3_INTERVAL, fetch_api_3, store_api3_records),
-        ("API-4", HORSE_API_4_INTERVAL, fetch_api_4, store_api4_records),
-        ("API-5 (HA Tomorrow)", HARNESS_API_1_INTERVAL, fetch_api_5, store_records),
-        ("API-6 (HA Today)", HARNESS_API_2_INTERVAL, fetch_api_6, store_records),
-        ("API-7 (HA Future)", HARNESS_API_3_INTERVAL, fetch_api_7, store_records),
-        ("API-8 (DG Today)", GRAYHOUND_API_1_INTERVAL, fetch_api_8, store_records),
-        ("API-9 (DG Tomorrow)", GRAYHOUND_API_2_INTERVAL, fetch_api_9, store_records),
-        ("API-10 (DG Future)", GRAYHOUND_API_3_INTERVAL, fetch_api_10, store_records),
+        ("API-1", HORSE_API_1_INTERVAL, fetch_api_1, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-2", HORSE_API_2_INTERVAL, fetch_api_2, lambda data: store_api2_records(data, section=RACES_SECTION_RACING)),
+        ("API-3", HORSE_API_3_INTERVAL, fetch_api_3, lambda data: store_api3_records(data, section=RACES_SECTION_RACING)),
+        ("API-4", HORSE_API_4_INTERVAL, fetch_api_4, lambda data: store_api4_records(data, section=RACES_SECTION_RACING)),
+        ("API-5 (HA Tomorrow)", HARNESS_API_1_INTERVAL, fetch_api_5, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-6 (HA Today)", HARNESS_API_2_INTERVAL, fetch_api_6, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-7 (HA Future)", HARNESS_API_3_INTERVAL, fetch_api_7, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-8 (DG Today)", GRAYHOUND_API_1_INTERVAL, fetch_api_8, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-9 (DG Tomorrow)", GRAYHOUND_API_2_INTERVAL, fetch_api_9, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-10 (DG Future)", GRAYHOUND_API_3_INTERVAL, fetch_api_10, lambda data: store_records(data, section=RACES_SECTION_RACING)),
     ]
 
     enabled = [t for t in tasks if t[1] and t[1] > 0]
