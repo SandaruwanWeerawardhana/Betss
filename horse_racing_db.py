@@ -74,8 +74,8 @@ CREATE TABLE IF NOT EXISTS runners (
     runner_name   VARCHAR(100)    NOT NULL,
     jockey        VARCHAR(100)    NULL,
     trainer       VARCHAR(100)    NULL,
-    silk          VARCHAR(255)    NULL,
-    silk_file     VARCHAR(255)    NULL,
+    silk          VARCHAR(512)    NULL,
+    silk_file     VARCHAR(512)    NULL,
     runner_status CHAR(2)         NULL,
     age           TINYINT         NULL,
     last_runs     VARCHAR(30)     NULL,
@@ -550,6 +550,8 @@ def ensure_database_and_table():
         for modify in (
             "ALTER TABLE meetings MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE runners MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE runners MODIFY COLUMN silk VARCHAR(512) NULL;",
+            "ALTER TABLE runners MODIFY COLUMN silk_file VARCHAR(512) NULL;",
             "ALTER TABLE races MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE race_runners MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE prices MODIFY COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
@@ -924,11 +926,20 @@ def store_records(records):
 
         latest_price = rr.get("latestPrice")
         if isinstance(latest_price, dict) and latest_price:
+            price_id = rr.get("latestPriceId") or latest_price.get("priceId") or latest_price.get("id")
+            if price_id is None:
+                price_id = None
+            else:
+                price_id = str(price_id)
+
+            if not price_id:
+                return inserted
+
             cursor.execute(
                 INSERT_PRICE_SQL,
                 (
                     rr_id,
-                    rr.get("latestPriceId") or latest_price.get("priceId") or latest_price.get("id"),
+                    price_id,
                     latest_price.get("decimalValue") or 0.0,
                     latest_price.get("winValue") or 0.0,
                     latest_price.get("placeValue") or 0.0,
@@ -948,11 +959,17 @@ def store_records(records):
         for price in (rr.get("prices") or []):
             if not isinstance(price, dict) or not price:
                 continue
+
+            price_id = price.get("priceId") or price.get("id")
+            if price_id is None:
+                continue
+            price_id = str(price_id)
+
             cursor.execute(
                 INSERT_PRICE_SQL,
                 (
                     rr_id,
-                    price.get("priceId") or price.get("id"),
+                    price_id,
                     price.get("decimalValue") or 0.0,
                     price.get("winValue") or 0.0,
                     price.get("placeValue") or 0.0,
@@ -1107,7 +1124,28 @@ def store_records(records):
             if meeting_id is None:
                 continue
 
-            _upsert_meeting_from_values(cursor, meeting_id=meeting_id, meeting_name=meeting_name or "Unknown")
+            meeting_country = race.get("countryCode")
+            meeting_category = race.get("category")
+            meeting_sub_code = race.get("subCode") or race.get("sub_code")
+            meeting_coverage = race.get("coverageCode")
+            meeting_sport = race.get("sportCode")
+            if meeting_obj:
+                meeting_country = meeting_country or meeting_obj.get("countryCode")
+                meeting_category = meeting_category or meeting_obj.get("category")
+                meeting_sub_code = meeting_sub_code or meeting_obj.get("subCode")
+                meeting_coverage = meeting_coverage or meeting_obj.get("coverageCode")
+                meeting_sport = meeting_sport or meeting_obj.get("sportCode")
+
+            _upsert_meeting_from_values(
+                cursor,
+                meeting_id=meeting_id,
+                meeting_name=meeting_name or "Unknown",
+                country_code=meeting_country,
+                category=meeting_category,
+                sub_code=meeting_sub_code,
+                coverage_code=meeting_coverage,
+                sport_code=meeting_sport,
+            )
             totals["meetings"] += 1
 
             race_id = _upsert_race_from_object(cursor, race, meeting_id)

@@ -16,6 +16,7 @@ from api_fetcher import (
     fetch_api_2,
     fetch_api_3,
     fetch_api_4,
+    fetch_api_5,
     fetch_all,
     fetch_race_runners_by_race,
     fetch_race_details_by_id,
@@ -59,6 +60,7 @@ HORSE_API_1_INTERVAL = int(os.getenv("HORSE_API_1_INTERVAL", 0))
 HORSE_API_2_INTERVAL = int(os.getenv("HORSE_API_2_INTERVAL", 0))
 HORSE_API_3_INTERVAL = int(os.getenv("HORSE_API_3_INTERVAL", 0))
 HORSE_API_4_INTERVAL = int(os.getenv("HORSE_API_4_INTERVAL", 0))
+HAENESS_API_1_INTERVAL = int(os.getenv("HAENESS_API_1_INTERVAL", os.getenv("HORSE_API_5_INTERVAL", "0")))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -172,6 +174,9 @@ def run_once():
     if results["api_4"]:
         store_api4_records(results["api_4"])
 
+    if results.get("api_5"):
+        store_records(results["api_5"])
+
     # After featured data is stored, read race ids from DB and fetch runners.
     try:
         if FETCH_ALL_RACE_IDS:
@@ -215,11 +220,18 @@ def _run_scheduler():
             "store": store_api4_records,
             "next_run": time.monotonic(),
         },
+        {
+            "name": "API-5 (HA Tomorrow)",
+            "interval": HAENESS_API_1_INTERVAL,
+            "fetch": fetch_api_5,
+            "store": store_records,
+            "next_run": time.monotonic(),
+        },
     ]
 
     enabled = [t for t in tasks if t["interval"] > 0]
     if not enabled:
-        log.info("Scheduler enabled, but no API_*_INTERVAL is > 0. Nothing to do.")
+        log.info("Scheduler enabled, but no API interval is > 0. Nothing to do.")
         return
 
     summary = ", ".join([f"{t['name']}={t['interval']}s" for t in enabled])
@@ -277,7 +289,13 @@ def main():
 
     scheduler_mode = any(
         v > 0
-        for v in (HORSE_API_1_INTERVAL, HORSE_API_2_INTERVAL, HORSE_API_3_INTERVAL, HORSE_API_4_INTERVAL)
+        for v in (
+            HORSE_API_1_INTERVAL,
+            HORSE_API_2_INTERVAL,
+            HORSE_API_3_INTERVAL,
+            HORSE_API_4_INTERVAL,
+            HAENESS_API_1_INTERVAL,
+        )
     )
 
     if scheduler_mode:

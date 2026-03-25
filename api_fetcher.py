@@ -1,7 +1,7 @@
-"""
-api_fetcher.py
---------------
-Fetches data from four separate API endpoints.
+"""api_fetcher.py
+-----------------
+Fetches data from multiple API endpoints.
+
 Each function is independent -- add headers, auth tokens,
 or query params per API without affecting the others.
 """
@@ -20,6 +20,7 @@ HORSE_API_1_URL = os.getenv("HORSE_API_1_URL", "")
 HORSE_API_2_URL = os.getenv("HORSE_API_2_URL", "")
 HORSE_API_3_URL = os.getenv("HORSE_API_3_URL", "")
 HORSE_API_4_URL = os.getenv("HORSE_API_4_URL", "")
+HARNESS_API_1_URL = os.getenv("HARNESS_API_1_URL", os.getenv("HORSE_API_5_URL", ""))
 
 # Per-race detail templates (optional)
 RACE_RUNNERS_BY_RACE_URL_TEMPLATE = os.getenv("RACE_RUNNERS_BY_RACE_URL_TEMPLATE", "")
@@ -116,6 +117,14 @@ def fetch_api_4():
     )
 
 
+def fetch_api_5():
+    """Featured races for Harness (HA) - tomorrow."""
+    return _get(
+        url=HARNESS_API_1_URL,
+        label="API-5 (HA Tomorrow)",
+    )
+
+
 # ─────────────────────────────────────────────
 # FETCH ALL
 # Returns a dict so main.py knows which data
@@ -128,6 +137,7 @@ def fetch_all():
         "api_2": fetch_api_2(),
         "api_3": fetch_api_3(),
         "api_4": fetch_api_4(),
+        "api_5": fetch_api_5(),
     }
 
 
