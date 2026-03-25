@@ -20,6 +20,7 @@ from api_fetcher import (
     fetch_api_6,
     fetch_api_7,
     fetch_api_8,
+    fetch_api_9,
     fetch_all,
     fetch_race_runners_by_race,
     fetch_race_details_by_id,
@@ -69,6 +70,7 @@ HARNESS_API_3_INTERVAL = int(os.getenv("HARNESS_API_3_INTERVAL", 0))
 
 # Greyhound (DG)
 GRAYHOUND_API_1_INTERVAL = int(os.getenv("GRAYHOUND_API_1_INTERVAL", 0))
+GRAYHOUND_API_2_INTERVAL = int(os.getenv("GRAYHOUND_API_2_INTERVAL", 0))
 
 
 
@@ -196,6 +198,9 @@ def run_once():
     if results.get("api_8"):
         store_records(results["api_8"])
 
+    if results.get("api_9"):
+        store_records(results["api_9"])
+
     # After featured data is stored, read race ids from DB and fetch runners.
     try:
         if FETCH_ALL_RACE_IDS:
@@ -264,6 +269,13 @@ def _run_scheduler():
             "name": "API-8 (DG Today)",
             "interval": GRAYHOUND_API_1_INTERVAL,
             "fetch": fetch_api_8,
+            "store": store_records,
+            "next_run": time.monotonic(),
+        },
+        {
+            "name": "API-9 (DG Tomorrow)",
+            "interval": GRAYHOUND_API_2_INTERVAL,
+            "fetch": fetch_api_9,
             "store": store_records,
             "next_run": time.monotonic(),
         },
@@ -338,6 +350,7 @@ def main():
             HARNESS_API_2_INTERVAL,
             HARNESS_API_3_INTERVAL,
             GRAYHOUND_API_1_INTERVAL,
+            GRAYHOUND_API_2_INTERVAL,
         )
     )
 
