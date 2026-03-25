@@ -8,6 +8,9 @@ to its own store function in horse_racing_db.py.
 import logging
 import time
 import os
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import schedule
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
@@ -35,6 +38,9 @@ from horse_racing_db import (
     store_api4_records,  # API-4: update with your actual function name
     get_race_ids,
     iter_race_ids,
+    get_candidate_races_for_results,
+    mark_race_results_fetched,
+    set_race_results_fetch_error,
 )
 
 load_dotenv(override=True)
@@ -59,19 +65,22 @@ MAX_RACE_IDS_PER_CYCLE = int(os.getenv("MAX_RACE_IDS_PER_CYCLE", 50))
 FETCH_ALL_RACE_IDS = os.getenv("FETCH_ALL_RACE_IDS", "0").strip().lower() in ("1", "true", "yes", "y")
 RACE_ID_BATCH_SIZE = int(os.getenv("RACE_ID_BATCH_SIZE", 500))
 
-# Optional: per-API intervals (seconds). If any of these is > 0, the scheduler
-# mode is used and each API is called on its own cadence.
+
 HORSE_API_1_INTERVAL = int(os.getenv("HORSE_API_1_INTERVAL", 0))
 HORSE_API_2_INTERVAL = int(os.getenv("HORSE_API_2_INTERVAL", 0))
 HORSE_API_3_INTERVAL = int(os.getenv("HORSE_API_3_INTERVAL", 0))
 HORSE_API_4_INTERVAL = int(os.getenv("HORSE_API_4_INTERVAL", 0))
-HAENESS_API_1_INTERVAL = int(os.getenv("HAENESS_API_1_INTERVAL", 0))
+HARNESS_API_1_INTERVAL = int(os.getenv("HARNESS_API_1_INTERVAL", 0))
 HARNESS_API_2_INTERVAL = int(os.getenv("HARNESS_API_2_INTERVAL", 0))
 HARNESS_API_3_INTERVAL = int(os.getenv("HARNESS_API_3_INTERVAL", 0))
-
 GRAYHOUND_API_1_INTERVAL = int(os.getenv("GRAYHOUND_API_1_INTERVAL", 0))
 GRAYHOUND_API_2_INTERVAL = int(os.getenv("GRAYHOUND_API_2_INTERVAL", 0))
 GRAYHOUND_API_3_INTERVAL = int(os.getenv("GRAYHOUND_API_3_INTERVAL", 0))
+
+# Per-race timing controls
+RESULT_FETCH_DELAY_MINUTES = int(os.getenv("RESULT_FETCH_DELAY_MINUTES", 15))
+RESULT_CHECK_INTERVAL_SECONDS = int(os.getenv("RESULT_CHECK_INTERVAL_SECONDS", 30))
+RESULT_CANDIDATE_MAX_ROWS = int(os.getenv("RESULT_CANDIDATE_MAX_ROWS", 500))
 
 
 
@@ -91,7 +100,12 @@ def _fetch_and_store_race_runners_for_races(race_ids):
     return _fetch_and_store_race_runners_for_races_internal(race_ids)
 
 
-def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: bool | None = None):
+def _fetch_and_store_race_runners_for_races_internal(
+    race_ids,
+    *,
+    treat_as_all: bool | None = None,
+    mark_fetched: bool = False,
+):
     if not FETCH_RACE_DETAILS and not FETCH_TODAY_MEETING_DATA_BY_ID and not FETCH_RACE_DETAILS_BY_ID:
         return
     if not race_ids:
@@ -136,6 +150,45 @@ def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: 
             break
 
         payloads: dict[str, object] = {}
+        errors: list[str] = []
+        had_results = False
+
+        def _payload_has_results(payload: object) -> bool:
+            if not payload:
+                return False
+            if isinstance(payload, dict):
+                payload = [payload]
+            if not isinstance(payload, list):
+                return False
+
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+
+                # Race detail payloads may include results[] or isSettled.
+                if isinstance(item.get("results"), list) and item.get("results"):
+                    return True
+                if bool(item.get("isSettled")) is True:
+                    return True
+
+                # Meeting payloads contain races[] with results.
+                races = item.get("races")
+                if isinstance(races, list):
+                    for race in races:
+                        if not isinstance(race, dict):
+                            continue
+                        if isinstance(race.get("results"), list) and race.get("results"):
+                            return True
+                        if bool(race.get("isSettled")) is True:
+                            return True
+
+                # Race runner detail payloads contain result objects per runner.
+                if isinstance(item.get("result"), dict) and item.get("result"):
+                    pos = item["result"].get("position")
+                    if pos is not None:
+                        return True
+
+            return False
 
         if executor is not None:
             log.info("Race %s: fetching %s endpoints in parallel", race_id, len(enabled_fetchers))
@@ -144,15 +197,19 @@ def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: 
                 try:
                     payloads[name] = fut.result()
                     log.debug("Race %s: %s fetch completed", race_id, name)
+                    had_results = had_results or _payload_has_results(payloads[name])
                 except Exception as err:
                     log.error("Per-race fetch failed (%s) for race_id=%s: %s", name, race_id, err)
+                    errors.append(f"fetch:{name}:{err}")
         else:
             for name, fn in enabled_fetchers:
                 try:
                     payloads[name] = fn(race_id)
                     log.debug("Race %s: %s fetch completed", race_id, name)
+                    had_results = had_results or _payload_has_results(payloads[name])
                 except Exception as err:
                     log.error("Per-race fetch failed (%s) for race_id=%s: %s", name, race_id, err)
+                    errors.append(f"fetch:{name}:{err}")
 
         try:
             stored_count = 0
@@ -165,6 +222,17 @@ def _fetch_and_store_race_runners_for_races_internal(race_ids, *, treat_as_all: 
                 log.info("Race %s: stored %s payload(s)", race_id, stored_count)
         except Exception as err:
             log.error("Per-race store failed for race_id=%s: %s", race_id, err)
+            errors.append(f"store:{err}")
+
+        if mark_fetched:
+            err_msg = "; ".join(errors) if errors else None
+            try:
+                if had_results:
+                    mark_race_results_fetched(race_id, error=err_msg)
+                elif err_msg:
+                    set_race_results_fetch_error(race_id, error=err_msg)
+            except Exception as err:
+                log.error("Failed updating results fetch status for race_id=%s: %s", race_id, err)
 
     if executor is not None:
         executor.shutdown(wait=True)
@@ -205,133 +273,127 @@ def run_once():
     if results.get("api_10"):
         store_records(results["api_10"])
 
-    # After featured data is stored, read race ids from DB and fetch runners.
-    try:
-        if FETCH_ALL_RACE_IDS:
-            ids = iter_race_ids(batch_size=RACE_ID_BATCH_SIZE)
-        else:
-            ids = get_race_ids(limit=MAX_RACE_IDS_PER_CYCLE)
-    except Exception as err:
-        log.error("Failed reading race ids from DB: %s", err)
-        ids = []
 
-    _fetch_and_store_race_runners_for_races(ids)
+def _timezone_for_country_code(country_code: str | None) -> str:
+    if not country_code:
+        return "UTC"
+    code = str(country_code).strip().upper()
+    mapping = {
+        "GB": "Europe/London",
+        "GBR": "Europe/London",
+        "UK": "Europe/London",
+        "IE": "Europe/Dublin",
+        "IRE": "Europe/Dublin",
+        "IRL": "Europe/Dublin",
+        "FR": "Europe/Paris",
+        "FRA": "Europe/Paris",
+        "AU": "Australia/Sydney",
+        "AUS": "Australia/Sydney",
+        "NZ": "Pacific/Auckland",
+        "NZL": "Pacific/Auckland",
+        "US": "America/New_York",
+        "USA": "America/New_York",
+    }
+    return mapping.get(code, "UTC")
+
+
+def fetch_due_race_results_cycle():
+    if not FETCH_RACE_DETAILS and not FETCH_TODAY_MEETING_DATA_BY_ID and not FETCH_RACE_DETAILS_BY_ID:
+        return
+
+    try:
+        candidates = get_candidate_races_for_results(limit=RESULT_CANDIDATE_MAX_ROWS)
+    except Exception as err:
+        log.error("Failed selecting candidate races for results: %s", err)
+        return
+
+    if not candidates:
+        return
+
+    due_race_ids: list[int] = []
+    delay = timedelta(minutes=max(0, RESULT_FETCH_DELAY_MINUTES))
+
+    for row in candidates:
+        race_id = row.get("race_id")
+        start_time = row.get("start_time")
+        country_code = row.get("country_code")
+
+        if race_id is None or start_time is None:
+            continue
+
+        tz_name = _timezone_for_country_code(country_code)
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = ZoneInfo("UTC")
+
+        # We store start_time in DB as a local time for that meeting.
+        # Compare it to "now" in the same local timezone.
+        start_local = start_time.replace(tzinfo=tz)
+        now_local = datetime.now(tz)
+        if now_local >= (start_local + delay):
+            try:
+                due_race_ids.append(int(race_id))
+            except (TypeError, ValueError):
+                continue
+
+    if not due_race_ids:
+        return
+
+    log.info("Per-race due cycle: %s race(s) due (delay=%s min)", len(due_race_ids), RESULT_FETCH_DELAY_MINUTES)
+    _fetch_and_store_race_runners_for_races_internal(due_race_ids, treat_as_all=True, mark_fetched=True)
 
 
 def _run_scheduler():
+    def _job(name, fetch_fn, store_fn):
+        try:
+            data = fetch_fn()
+            if data:
+                store_fn(data)
+        except Exception as err:
+            log.error("%s error: %s", name, err)
+
     tasks = [
-        {
-            "name": "API-1",
-            "interval": HORSE_API_1_INTERVAL,
-            "fetch": fetch_api_1,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-2",
-            "interval": HORSE_API_2_INTERVAL,
-            "fetch": fetch_api_2,
-            "store": store_api2_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-3",
-            "interval": HORSE_API_3_INTERVAL,
-            "fetch": fetch_api_3,
-            "store": store_api3_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-4",
-            "interval": HORSE_API_4_INTERVAL,
-            "fetch": fetch_api_4,
-            "store": store_api4_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-5 (HA Tomorrow)",
-            "interval": HAENESS_API_1_INTERVAL,
-            "fetch": fetch_api_5,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-6 (HA Today)",
-            "interval": HARNESS_API_2_INTERVAL,
-            "fetch": fetch_api_6,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-7 (HA Future)",
-            "interval": HARNESS_API_3_INTERVAL,
-            "fetch": fetch_api_7,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-8 (DG Today)",
-            "interval": GRAYHOUND_API_1_INTERVAL,
-            "fetch": fetch_api_8,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-9 (DG Tomorrow)",
-            "interval": GRAYHOUND_API_2_INTERVAL,
-            "fetch": fetch_api_9,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
-        {
-            "name": "API-10 (DG Future)",
-            "interval": GRAYHOUND_API_3_INTERVAL,
-            "fetch": fetch_api_10,
-            "store": store_records,
-            "next_run": time.monotonic(),
-        },
+        ("API-1", HORSE_API_1_INTERVAL, fetch_api_1, store_records),
+        ("API-2", HORSE_API_2_INTERVAL, fetch_api_2, store_api2_records),
+        ("API-3", HORSE_API_3_INTERVAL, fetch_api_3, store_api3_records),
+        ("API-4", HORSE_API_4_INTERVAL, fetch_api_4, store_api4_records),
+        ("API-5 (HA Tomorrow)", HARNESS_API_1_INTERVAL, fetch_api_5, store_records),
+        ("API-6 (HA Today)", HARNESS_API_2_INTERVAL, fetch_api_6, store_records),
+        ("API-7 (HA Future)", HARNESS_API_3_INTERVAL, fetch_api_7, store_records),
+        ("API-8 (DG Today)", GRAYHOUND_API_1_INTERVAL, fetch_api_8, store_records),
+        ("API-9 (DG Tomorrow)", GRAYHOUND_API_2_INTERVAL, fetch_api_9, store_records),
+        ("API-10 (DG Future)", GRAYHOUND_API_3_INTERVAL, fetch_api_10, store_records),
     ]
 
-    enabled = [t for t in tasks if t["interval"] > 0]
+    enabled = [t for t in tasks if t[1] and t[1] > 0]
     if not enabled:
         log.info("Scheduler enabled, but no API interval is > 0. Nothing to do.")
         return
 
-    summary = ", ".join([f"{t['name']}={t['interval']}s" for t in enabled])
-    log.info(f"Scheduler mode: {summary}. Press Ctrl+C to stop.")
+    schedule.clear()
+    for (name, interval, fetch_fn, store_fn) in enabled:
+        schedule.every(interval).seconds.do(_job, name, fetch_fn, store_fn)
+
+    # Periodically check for races that are due for per-race detail calls.
+    if RESULT_CHECK_INTERVAL_SECONDS > 0:
+        schedule.every(RESULT_CHECK_INTERVAL_SECONDS).seconds.do(fetch_due_race_results_cycle)
+
+    summary = ", ".join([f"{t[0]}={t[1]}s" for t in enabled])
+    log.info("Scheduler mode: %s. Due-check=%ss, delay=%s min. Press Ctrl+C to stop.", summary, RESULT_CHECK_INTERVAL_SECONDS, RESULT_FETCH_DELAY_MINUTES)
+
+    # Seed featured data once immediately so races exist for the due-check.
+    try:
+        run_once()
+    except Exception as err:
+        log.error("Startup featured fetch failed: %s", err)
 
     while True:
-        now = time.monotonic()
-
-        for task in enabled:
-            if now < task["next_run"]:
-                continue
-
-            try:
-                data = task["fetch"]()
-                if data:
-                    task["store"](data)
-
-                    # Keep race runner details up to date based on what's stored.
-                    # When FETCH_ALL_RACE_IDS=1, do a full backfill only after API-1; after API-2/3/4
-                    # do a small refresh (top N ids) so newly inserted races get details quickly.
-                    try:
-                        if FETCH_ALL_RACE_IDS and task["name"] == "API-1":
-                            ids = iter_race_ids(batch_size=RACE_ID_BATCH_SIZE)
-                            _fetch_and_store_race_runners_for_races_internal(ids, treat_as_all=True)
-                        else:
-                            ids = get_race_ids(limit=MAX_RACE_IDS_PER_CYCLE)
-                            _fetch_and_store_race_runners_for_races_internal(ids, treat_as_all=False)
-                    except Exception as err:
-                        log.error("Failed reading race ids from DB: %s", err)
-            except Exception as err:
-                log.error(f"{task['name']} error: {err}")
-            finally:
-                task["next_run"] = time.monotonic() + task["interval"]
-
-        next_due = min(t["next_run"] for t in enabled)
-        sleep_for = max(0.1, min(1.0, next_due - time.monotonic()))
-        time.sleep(sleep_for)
+        try:
+            schedule.run_pending()
+        except Exception as err:
+            log.error("Scheduler loop error: %s", err)
+        time.sleep(1)
 
 
 def main():
@@ -357,7 +419,7 @@ def main():
             HORSE_API_2_INTERVAL,
             HORSE_API_3_INTERVAL,
             HORSE_API_4_INTERVAL,
-            HAENESS_API_1_INTERVAL,
+            HARNESS_API_1_INTERVAL,
             HARNESS_API_2_INTERVAL,
             HARNESS_API_3_INTERVAL,
             GRAYHOUND_API_1_INTERVAL,
@@ -375,12 +437,14 @@ def main():
         while True:
             try:
                 run_once()
+                fetch_due_race_results_cycle()
             except Exception as err:
                 log.error(f"Cycle error: {err}")
             time.sleep(POLL_INTERVAL)
     else:
         log.info("Single-run mode.")
         run_once()
+        fetch_due_race_results_cycle()
 
 
 if __name__ == "__main__":

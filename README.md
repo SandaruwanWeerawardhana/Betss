@@ -28,7 +28,7 @@ The app:
 Install these packages:
 
 ```bash
-pip install requests python-dotenv mysql-connector-python
+pip install requests python-dotenv mysql-connector-python schedule tzdata
 ```
 
 Optional `requirements.txt`:
@@ -37,6 +37,8 @@ Optional `requirements.txt`:
 requests>=2.31.0
 python-dotenv>=1.0.0
 mysql-connector-python>=8.0.0
+schedule>=1.2.0
+tzdata>=2024.1
 ```
 
 ## Environment Configuration
@@ -114,6 +116,23 @@ Recommended starting points:
 - Meeting / race card info: 5 minutes
 - Results / settled races: 2 minutes
 - Historical / reference data: 1 hour (or once daily)
+
+### Time-gated per-race detail calls (+15 minutes)
+
+Per-race endpoints (like `GetRaceRunnersByRace/{raceId}`) are **not** called immediately after featured races are stored.
+Instead, the app periodically scans the `races` table and only calls per-race endpoints when:
+
+- The race `start_time` exists, and
+- The meeting-local current time is at least `RESULT_FETCH_DELAY_MINUTES` after `start_time`, and
+- The race has not already been marked as fetched (`races.results_fetched_at IS NULL`)
+
+Config:
+
+```env
+RESULT_FETCH_DELAY_MINUTES=15
+RESULT_CHECK_INTERVAL_SECONDS=30
+RESULT_CANDIDATE_MAX_ROWS=500
+```
 
 ## Database Behavior
 

@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS races (
     race_number       TINYINT         NULL,
     start_time        DATETIME        NULL,
     start_time_utc    DATETIME        NULL,
+    results_fetched_at DATETIME        NULL,
+    results_fetch_error VARCHAR(500)   NULL,
     course_type       CHAR(2)         NULL,
     distance          VARCHAR(30)     NULL,
     no_of_runners     TINYINT         NULL,
@@ -203,6 +205,7 @@ CREATE TABLE IF NOT EXISTS results (
     created_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    UNIQUE KEY uq_results_race_runner_id (race_runner_id),
     CONSTRAINT fk_result_race   FOREIGN KEY (race_id)       REFERENCES races        (id),
     CONSTRAINT fk_result_runner FOREIGN KEY (runner_id)     REFERENCES runners      (id),
     CONSTRAINT fk_result_rr     FOREIGN KEY (race_runner_id) REFERENCES race_runners (id)
@@ -500,6 +503,100 @@ def iter_race_ids(batch_size: int = 500):
         conn.close()
 
 
+def get_candidate_races_for_results(limit: int = 200):
+    """Return races that may be due for per-race detail fetching.
+
+    Includes meeting country_code so callers can evaluate local-time rules.
+    Only returns races that have not been marked as fetched.
+    """
+    if limit is None:
+        limit = 200
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 200
+    if limit <= 0:
+        limit = 200
+
+    conn = get_connection(with_db=True)
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT
+                r.id AS race_id,
+                r.start_time AS start_time,
+                m.country_code AS country_code
+            FROM races r
+            JOIN meetings m ON m.id = r.meeting_id
+            WHERE r.is_deleted = 0
+              AND r.start_time IS NOT NULL
+              AND r.results_fetched_at IS NULL
+            ORDER BY r.start_time ASC
+            LIMIT %s;
+            """,
+            (limit,),
+        )
+        return cursor.fetchall() or []
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def mark_race_results_fetched(race_id: int, *, error: str | None = None):
+    """Mark a race as having had its per-race detail fetch attempted."""
+    if race_id is None:
+        return
+    try:
+        race_id = int(race_id)
+    except (TypeError, ValueError):
+        return
+
+    if error:
+        error = str(error)
+        if len(error) > 500:
+            error = error[:497] + "..."
+
+    conn = get_connection(with_db=True)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE races SET results_fetched_at = NOW(), results_fetch_error = %s WHERE id = %s;",
+            (error, race_id),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_race_results_fetch_error(race_id: int, *, error: str | None = None):
+    """Store a fetch error message without marking the race as fetched."""
+    if race_id is None:
+        return
+    try:
+        race_id = int(race_id)
+    except (TypeError, ValueError):
+        return
+
+    if error:
+        error = str(error)
+        if len(error) > 500:
+            error = error[:497] + "..."
+
+    conn = get_connection(with_db=True)
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE races SET results_fetch_error = %s WHERE id = %s;",
+            (error, race_id),
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
 # ─────────────────────────────────────────────
 # SETUP
 # ─────────────────────────────────────────────
@@ -530,6 +627,8 @@ def ensure_database_and_table():
             "ALTER TABLE runners ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE races ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
             "ALTER TABLE races ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
+            "ALTER TABLE races ADD COLUMN results_fetched_at DATETIME NULL;",
+            "ALTER TABLE races ADD COLUMN results_fetch_error VARCHAR(500) NULL;",
             "ALTER TABLE race_runners ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
             "ALTER TABLE race_runners ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE race_runners ADD COLUMN description VARCHAR(255) NULL;",
@@ -571,6 +670,15 @@ def ensure_database_and_table():
         except mysql.connector.Error as err:
             # 1061: duplicate key name, 1068/others: already exists or cannot add.
             log.debug(f"Skipping prices unique key creation: {err}")
+
+        # Ensure results upserts match records (one result row per race_runner).
+        # Note: if you already have duplicates in `results`, adding this key will fail.
+        try:
+            cursor.execute(
+                "ALTER TABLE results ADD UNIQUE KEY uq_results_race_runner_id (race_runner_id);"
+            )
+        except mysql.connector.Error as err:
+            log.debug(f"Skipping results unique key creation: {err}")
 
         conn.commit()
         cursor.close()
