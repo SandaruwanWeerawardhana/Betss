@@ -20,7 +20,8 @@ HORSE_API_1_URL = os.getenv("HORSE_API_1_URL", "")
 HORSE_API_2_URL = os.getenv("HORSE_API_2_URL", "")
 HORSE_API_3_URL = os.getenv("HORSE_API_3_URL", "")
 HORSE_API_4_URL = os.getenv("HORSE_API_4_URL", "")
-HARNESS_API_1_URL = os.getenv("HARNESS_API_1_URL", os.getenv("HORSE_API_5_URL", ""))
+HARNESS_API_1_URL = os.getenv("HARNESS_API_1_URL","")
+HARNESS_API_2_URL = os.getenv("HARNESS_API_2_URL", "")
 
 # Per-race detail templates (optional)
 RACE_RUNNERS_BY_RACE_URL_TEMPLATE = os.getenv("RACE_RUNNERS_BY_RACE_URL_TEMPLATE", "")
@@ -125,6 +126,14 @@ def fetch_api_5():
     )
 
 
+def fetch_api_6():
+    """Featured races for Harness (HA) - today."""
+    return _get(
+        url=HARNESS_API_2_URL,
+        label="API-6 (HA Today)",
+    )
+
+
 # ─────────────────────────────────────────────
 # FETCH ALL
 # Returns a dict so main.py knows which data
@@ -138,6 +147,7 @@ def fetch_all():
         "api_3": fetch_api_3(),
         "api_4": fetch_api_4(),
         "api_5": fetch_api_5(),
+        "api_6": fetch_api_6(),
     }
 
 

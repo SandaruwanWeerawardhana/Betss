@@ -17,6 +17,7 @@ from api_fetcher import (
     fetch_api_3,
     fetch_api_4,
     fetch_api_5,
+    fetch_api_6,
     fetch_all,
     fetch_race_runners_by_race,
     fetch_race_details_by_id,
@@ -61,6 +62,7 @@ HORSE_API_2_INTERVAL = int(os.getenv("HORSE_API_2_INTERVAL", 0))
 HORSE_API_3_INTERVAL = int(os.getenv("HORSE_API_3_INTERVAL", 0))
 HORSE_API_4_INTERVAL = int(os.getenv("HORSE_API_4_INTERVAL", 0))
 HAENESS_API_1_INTERVAL = int(os.getenv("HAENESS_API_1_INTERVAL", os.getenv("HORSE_API_5_INTERVAL", "0")))
+HARNESS_API_2_INTERVAL = int(os.getenv("HARNESS_API_2_INTERVAL", 0))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -177,6 +179,9 @@ def run_once():
     if results.get("api_5"):
         store_records(results["api_5"])
 
+    if results.get("api_6"):
+        store_records(results["api_6"])
+
     # After featured data is stored, read race ids from DB and fetch runners.
     try:
         if FETCH_ALL_RACE_IDS:
@@ -224,6 +229,13 @@ def _run_scheduler():
             "name": "API-5 (HA Tomorrow)",
             "interval": HAENESS_API_1_INTERVAL,
             "fetch": fetch_api_5,
+            "store": store_records,
+            "next_run": time.monotonic(),
+        },
+        {
+            "name": "API-6 (HA Today)",
+            "interval": HARNESS_API_2_INTERVAL,
+            "fetch": fetch_api_6,
             "store": store_records,
             "next_run": time.monotonic(),
         },
@@ -295,6 +307,7 @@ def main():
             HORSE_API_3_INTERVAL,
             HORSE_API_4_INTERVAL,
             HAENESS_API_1_INTERVAL,
+            HARNESS_API_2_INTERVAL,
         )
     )
 
