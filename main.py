@@ -336,13 +336,30 @@ def fetch_due_race_results_cycle():
 
     due_race_ids: list[int] = []
     delay = timedelta(minutes=max(0, RESULT_FETCH_DELAY_MINUTES))
+    now_utc = datetime.now(ZoneInfo("UTC"))
 
     for row in candidates:
         race_id = row.get("race_id")
+        start_time_local = row.get("start_time_local")
         start_time = row.get("start_time")
         country_code = row.get("country_code")
 
-        if race_id is None or start_time is None:
+        if race_id is None:
+            continue
+
+        # Prefer startTimeLocal (local wall-clock time from API payload)
+        # Direct comparison without timezone conversion
+        if start_time_local is not None:
+            now_local = datetime.now()
+            if now_local >= (start_time_local + delay):
+                try:
+                    due_race_ids.append(int(race_id))
+                except (TypeError, ValueError):
+                    continue
+            continue
+
+        # Fallback: use start_time with timezone conversion if startTimeLocal not available
+        if start_time is None:
             continue
 
         tz_name = _timezone_for_country_code(country_code)
@@ -351,8 +368,6 @@ def fetch_due_race_results_cycle():
         except Exception:
             tz = ZoneInfo("UTC")
 
-        # We store start_time in DB as a local time for that meeting.
-        # Compare it to "now" in the same local timezone.
         start_local = start_time.replace(tzinfo=tz)
         now_local = datetime.now(tz)
         if now_local >= (start_local + delay):

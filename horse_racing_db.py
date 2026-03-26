@@ -510,7 +510,7 @@ def iter_race_ids(batch_size: int = 500):
 def get_candidate_races_for_results(limit: int = 200):
     """Return races that may be due for per-race detail fetching.
 
-    Includes meeting country_code so callers can evaluate local-time rules.
+    Includes startTimeLocal for direct local-time comparison without timezone conversion.
     Only returns races that have not been marked as fetched.
     """
     if limit is None:
@@ -530,13 +530,14 @@ def get_candidate_races_for_results(limit: int = 200):
             SELECT
                 r.id AS race_id,
                 r.start_time AS start_time,
+                r.startTimeLocal AS start_time_local,
                 m.country_code AS country_code
             FROM races r
             JOIN meetings m ON m.id = r.meeting_id
             WHERE r.is_deleted = 0
-              AND r.start_time IS NOT NULL
+              AND (r.startTimeLocal IS NOT NULL OR r.start_time IS NOT NULL)
               AND r.results_fetched_at IS NULL
-            ORDER BY r.start_time ASC
+            ORDER BY COALESCE(r.startTimeLocal, r.start_time) ASC
             LIMIT %s;
             """,
             (limit,),
