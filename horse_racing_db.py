@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS races (
     race_number       TINYINT         NULL,
     start_time        DATETIME        NULL,
     start_time_utc    DATETIME        NULL,
+    startTimeLocal    DATETIME        NULL,
     section           VARCHAR(20)     NULL,
     results_fetched_at DATETIME        NULL,
     results_fetch_error VARCHAR(500)   NULL,
@@ -274,7 +275,7 @@ ON DUPLICATE KEY UPDATE
 INSERT_RACE_SQL = """
 INSERT INTO races (
     id, meeting_id, race_id, race_name, race_number,
-    start_time, start_time_utc, section, course_type, distance,
+    start_time, start_time_utc, startTimeLocal, section, course_type, distance,
     no_of_runners, eachway_places, expected_places, is_handicap,
     off_time, off_time_utc, status, surface,
     progress_code, progress_message, place_config_id,
@@ -284,7 +285,7 @@ INSERT INTO races (
     is_settled, is_deleted
 ) VALUES (
     %s, %s, %s, %s, %s,
-    %s, %s, %s, %s, %s,
+    %s, %s, %s, %s, %s, %s,
     %s, %s, %s, %s,
     %s, %s, %s, %s,
     %s, %s, %s,
@@ -300,6 +301,7 @@ ON DUPLICATE KEY UPDATE
     race_number=VALUES(race_number),
     start_time=VALUES(start_time),
     start_time_utc=VALUES(start_time_utc),
+    startTimeLocal=VALUES(startTimeLocal),
     section=COALESCE(VALUES(section), section),
     course_type=VALUES(course_type),
     distance=VALUES(distance),
@@ -630,6 +632,7 @@ def ensure_database_and_table():
             "ALTER TABLE races ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
             "ALTER TABLE races ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE races ADD COLUMN section VARCHAR(20) NULL;",
+            "ALTER TABLE races ADD COLUMN startTimeLocal DATETIME NULL;",
             "ALTER TABLE races ADD COLUMN results_fetched_at DATETIME NULL;",
             "ALTER TABLE races ADD COLUMN results_fetch_error VARCHAR(500) NULL;",
             "ALTER TABLE race_runners ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
@@ -712,7 +715,11 @@ def _parse_dt(value):
         raw = value.strip()
         raw = raw.replace("Z", "+00:00")
         try:
-            return datetime.fromisoformat(raw)
+            dt = datetime.fromisoformat(raw)
+            # MySQL DATETIME doesn't carry timezone; store the local wall-clock time.
+            if getattr(dt, "tzinfo", None) is not None:
+                dt = dt.replace(tzinfo=None)
+            return dt
         except ValueError:
             try:
                 return datetime.fromisoformat(raw[:19])
@@ -838,6 +845,7 @@ def store_records(records, *, section: str | None = None):
                 _to_int(race.get("raceNumber")),
                 _parse_dt(race.get("startTime")),
                 _parse_dt(race.get("startTimeUtc")),
+                _parse_dt(race.get("startTimeLocal")),
                 section_value,
                 race.get("courseType"),
                 race.get("distance"),
@@ -875,6 +883,7 @@ def store_records(records, *, section: str | None = None):
                 race_id,
                 meeting_id,
                 str(race_id),
+                None,
                 None,
                 None,
                 None,
