@@ -66,6 +66,9 @@ VHORSE_API_2_URL=https://
 # Optional: Featured Virtual Races (Greyhound - today)
 VGREYHOUND_API_1_URL=https://
 
+# Optional: Featured Virtual Races (Greyhound - tomorrow)
+VGREYHOUND_API_2_URL=https://
+
 # 0 = run once and exit
 # >0 = polling mode, value is seconds between cycles
 POLL_INTERVAL=0
@@ -110,7 +113,7 @@ If you want different time gaps for different data types, set `HORSE_API_1_INTER
 
 When **any** `HORSE_API_*_INTERVAL` is > 0, the app switches to **scheduler mode** and calls each API on its own cadence.
 
-You can also schedule the virtual featured races endpoints with `VHORSE_API_1_INTERVAL`, `VHORSE_API_2_INTERVAL`, and `VGREYHOUND_API_1_INTERVAL`.
+You can also schedule the virtual featured races endpoints with `VHORSE_API_1_INTERVAL`, `VHORSE_API_2_INTERVAL`, `VGREYHOUND_API_1_INTERVAL`, and `VGREYHOUND_API_2_INTERVAL`.
 
 Example:
 

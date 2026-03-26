@@ -28,6 +28,7 @@ from api_fetcher import (
     fetch_api_11,
     fetch_api_12,
     fetch_api_13,
+    fetch_api_14,
     fetch_all,
     fetch_race_runners_by_race,
     fetch_race_details_by_id,
@@ -83,6 +84,7 @@ GRAYHOUND_API_3_INTERVAL = int(os.getenv("GRAYHOUND_API_3_INTERVAL", 0))
 VHORSE_API_1_INTERVAL = int(os.getenv("VHORSE_API_1_INTERVAL", 0))
 VHORSE_API_2_INTERVAL = int(os.getenv("VHORSE_API_2_INTERVAL", 0))
 VGREYHOUND_API_1_INTERVAL = int(os.getenv("VGREYHOUND_API_1_INTERVAL", 0))
+VGREYHOUND_API_2_INTERVAL = int(os.getenv("VGREYHOUND_API_2_INTERVAL", 0))
 
 # Per-race timing controls
 RESULT_FETCH_DELAY_MINUTES = int(os.getenv("RESULT_FETCH_DELAY_MINUTES", 15))
@@ -292,6 +294,9 @@ def run_once():
     if results.get("api_13"):
         store_records(results["api_13"], section=RACES_SECTION_VIRTUAL)
 
+    if results.get("api_14"):
+        store_records(results["api_14"], section=RACES_SECTION_VIRTUAL)
+
 
 def _timezone_for_country_code(country_code: str | None) -> str:
     if not country_code:
@@ -386,6 +391,7 @@ def _run_scheduler():
         ("API-11 (VHR Today)", VHORSE_API_1_INTERVAL, fetch_api_11, lambda data: store_records(data, section=RACES_SECTION_VIRTUAL)),
         ("API-12 (VHR Tomorrow)", VHORSE_API_2_INTERVAL, fetch_api_12, lambda data: store_records(data, section=RACES_SECTION_VIRTUAL)),
         ("API-13 (VDG Today)", VGREYHOUND_API_1_INTERVAL, fetch_api_13, lambda data: store_records(data, section=RACES_SECTION_VIRTUAL)),
+        ("API-14 (VDG Tomorrow)", VGREYHOUND_API_2_INTERVAL, fetch_api_14, lambda data: store_records(data, section=RACES_SECTION_VIRTUAL)),
     ]
 
     enabled = [t for t in tasks if t[1] and t[1] > 0]
@@ -450,6 +456,7 @@ def main():
             VHORSE_API_1_INTERVAL,
             VHORSE_API_2_INTERVAL,
             VGREYHOUND_API_1_INTERVAL,
+            VGREYHOUND_API_2_INTERVAL,
         )
     )
 
