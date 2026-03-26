@@ -25,6 +25,7 @@ from api_fetcher import (
     fetch_api_8,
     fetch_api_9,
     fetch_api_10,
+    fetch_api_11,
     fetch_all,
     fetch_race_runners_by_race,
     fetch_race_details_by_id,
@@ -77,6 +78,8 @@ GRAYHOUND_API_1_INTERVAL = int(os.getenv("GRAYHOUND_API_1_INTERVAL", 0))
 GRAYHOUND_API_2_INTERVAL = int(os.getenv("GRAYHOUND_API_2_INTERVAL", 0))
 GRAYHOUND_API_3_INTERVAL = int(os.getenv("GRAYHOUND_API_3_INTERVAL", 0))
 
+VHORSE_API_1_INTERVAL = int(os.getenv("VHORSE_API_1_INTERVAL", 0))
+
 # Per-race timing controls
 RESULT_FETCH_DELAY_MINUTES = int(os.getenv("RESULT_FETCH_DELAY_MINUTES", 15))
 RESULT_CHECK_INTERVAL_SECONDS = int(os.getenv("RESULT_CHECK_INTERVAL_SECONDS", 30))
@@ -96,6 +99,7 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 RACES_SECTION_RACING = "RACING"
+RACES_SECTION_VIRTUAL = "VIRTUAL"
 
 
 def _fetch_and_store_race_runners_for_races(race_ids):
@@ -275,6 +279,9 @@ def run_once():
     if results.get("api_10"):
         store_records(results["api_10"], section=RACES_SECTION_RACING)
 
+    if results.get("api_11"):
+        store_records(results["api_11"], section=RACES_SECTION_VIRTUAL)
+
 
 def _timezone_for_country_code(country_code: str | None) -> str:
     if not country_code:
@@ -366,6 +373,7 @@ def _run_scheduler():
         ("API-8 (DG Today)", GRAYHOUND_API_1_INTERVAL, fetch_api_8, lambda data: store_records(data, section=RACES_SECTION_RACING)),
         ("API-9 (DG Tomorrow)", GRAYHOUND_API_2_INTERVAL, fetch_api_9, lambda data: store_records(data, section=RACES_SECTION_RACING)),
         ("API-10 (DG Future)", GRAYHOUND_API_3_INTERVAL, fetch_api_10, lambda data: store_records(data, section=RACES_SECTION_RACING)),
+        ("API-11 (VHR Today)", VHORSE_API_1_INTERVAL, fetch_api_11, lambda data: store_records(data, section=RACES_SECTION_RACING)),
     ]
 
     enabled = [t for t in tasks if t[1] and t[1] > 0]
@@ -427,6 +435,7 @@ def main():
             GRAYHOUND_API_1_INTERVAL,
             GRAYHOUND_API_2_INTERVAL,
             GRAYHOUND_API_3_INTERVAL,
+            VHORSE_API_1_INTERVAL,
         )
     )
 

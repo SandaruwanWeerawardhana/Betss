@@ -57,6 +57,9 @@ HORSE_API_2_URL=https://
 HORSE_API_3_URL=https://
 HORSE_API_4_URL=https://
 
+# Optional: Featured Virtual Races (Horse - today)
+VHORSE_API_1_URL=https://
+
 # 0 = run once and exit
 # >0 = polling mode, value is seconds between cycles
 POLL_INTERVAL=0
@@ -100,6 +103,8 @@ python main.py
 If you want different time gaps for different data types, set `HORSE_API_1_INTERVAL` ... `HORSE_API_4_INTERVAL` (seconds).
 
 When **any** `HORSE_API_*_INTERVAL` is > 0, the app switches to **scheduler mode** and calls each API on its own cadence.
+
+You can also schedule the virtual featured races endpoint with `VHORSE_API_1_INTERVAL`.
 
 Example:
 
