@@ -60,6 +60,9 @@ HORSE_API_4_URL=https://
 # Optional: Featured Virtual Races (Horse - today)
 VHORSE_API_1_URL=https://
 
+# Optional: Featured Virtual Races (Horse - tomorrow)
+VHORSE_API_2_URL=https://
+
 # 0 = run once and exit
 # >0 = polling mode, value is seconds between cycles
 POLL_INTERVAL=0
