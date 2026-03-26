@@ -30,6 +30,8 @@ GRAYHOUND_API_3_URL = os.getenv("GRAYHOUND_API_3_URL", "")
 VHORSE_API_1_URL = os.getenv("VHORSE_API_1_URL", "")
 VHORSE_API_2_URL = os.getenv("VHORSE_API_2_URL", "")
 
+VGREYHOUND_API_1_URL = os.getenv("VGREYHOUND_API_1_URL", "")
+
 # Per-race detail templates (optional)
 RACE_RUNNERS_BY_RACE_URL_TEMPLATE = os.getenv("RACE_RUNNERS_BY_RACE_URL_TEMPLATE", "")
 TODAY_MEETING_DATA_BY_ID_URL_TEMPLATE = os.getenv("TODAY_MEETING_DATA_BY_ID_URL_TEMPLATE", "")
@@ -189,6 +191,14 @@ def fetch_api_12():
     )
 
 
+def fetch_api_13():
+    """Featured virtual races for Greyhound (DG) - today."""
+    return _get(
+        url=VGREYHOUND_API_1_URL,
+        label="API-13 (VDG Today)",
+    )
+
+
 # ─────────────────────────────────────────────
 # FETCH ALL
 # Returns a dict so main.py knows which data
@@ -209,6 +219,7 @@ def fetch_all():
         "api_10": fetch_api_10(),
         "api_11": fetch_api_11(),
         "api_12": fetch_api_12(),
+        "api_13": fetch_api_13(),
     }
 
 
