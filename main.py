@@ -40,8 +40,6 @@ from horse_racing_db import (
     store_api2_records,  # API-2: update with your actual function name
     store_api3_records,  # API-3: update with your actual function name
     store_api4_records,  # API-4: update with your actual function name
-    get_race_ids,
-    iter_race_ids,
     get_candidate_races_for_results,
     mark_race_results_fetched,
     set_race_results_fetch_error,
