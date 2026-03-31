@@ -102,8 +102,8 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
-RACES_SECTION_RACING = "live"
-RACES_SECTION_VIRTUAL = "computer"
+RACES_SECTION_RACING = "RACING"
+RACES_SECTION_VIRTUAL = "VIRTUAL"
 
 
 def _fetch_and_store_race_runners_for_races(race_ids):
