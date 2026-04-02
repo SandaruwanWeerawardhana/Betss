@@ -114,7 +114,8 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
 
     race_name = _to_str(race_obj.get("raceName"))
     race_number = _to_int(race_obj.get("raceNumber"))
-    start_dt = _parse_dt(race_obj.get("startTimeLocal") or race_obj.get("startTime") or race_obj.get("offTime"))
+    start_dt_local = _parse_dt(race_obj.get("startTimeLocal"))
+    start_dt = start_dt_local or _parse_dt(race_obj.get("startTime") or race_obj.get("offTime"))
 
     if not race_name:
         if race_number is not None:
@@ -130,10 +131,9 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
 
     place_count = _to_int(race_obj.get("placeCount") or race_obj.get("eachwayPlaces") or race_obj.get("expectedPlaces"))
 
-    is_settled = bool(race_obj.get("isSettled"))
-    is_past = is_settled
-    if start_dt is not None:
-        is_past = is_past or (datetime.now() >= start_dt)
+    is_past = False
+    if start_dt_local is not None:
+        is_past = start_dt_local.date() < datetime.now().date()
 
     section = _to_str(race_obj.get("section"))
 
