@@ -782,7 +782,7 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
       "raceTime": <HH:MM:SS from races.start_time>,
       "placeCount": <races.no_of_runners>,
       "raceEntries": [{"number": ..., "horseName": ...}, ...],
-      "raceType": "WIN",
+      "raceType": <races.section>,
       "isPast": true/false,
       "scraperId": <races.id>,
       "results": [{...}, ...]
@@ -804,6 +804,7 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
             SELECT
                 r.id AS race_id,
                 r.race_name,
+                r.section,
                 r.start_time,
                 r.no_of_runners,
                 r.is_settled,
@@ -915,7 +916,7 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
             "raceTime": race_time,
             "placeCount": place_count_int,
             "raceEntries": race_entries,
-            "raceType": "WIN",
+            "raceType": race.get("section"),
             "isPast": bool(is_past),
             "scraperId": race_id,
             "results": results_out,

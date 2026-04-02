@@ -135,7 +135,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
     if start_dt is not None:
         is_past = is_past or (datetime.now() >= start_dt)
 
-    race_type = _to_str(race_obj.get("raceType"))
+    section = _to_str(race_obj.get("section"))
 
     betting_center = (
         _to_str(race_obj.get("bettingCenter"))
@@ -179,7 +179,6 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
                 "place": position,
                 "win_odds": _to_str(win_odds) or "",
                 "place_odds": _to_str(place_odds) or "",
-                # Keep compatibility with your sample keys.
                 "win_odd": _to_str(win_odds) or "",
                 "win_place_odd": _to_str(place_odds) or "",
             }
@@ -213,6 +212,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
                         "place_odds": _to_str(place_odds) or "",
                         "win_odd": _to_str(win_odds) or "",
                         "win_place_odd": _to_str(place_odds) or "",
+                        "section": section,
                     }
                 )
 
@@ -223,7 +223,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
         "raceDate": race_date or "",
         "raceTime": race_time or "",
         "placeCount": place_count if place_count is not None else 0,
-        "raceType": race_type,
+        "raceType": section,
         "isPast": bool(is_past),
         "results": results_out,
     }
