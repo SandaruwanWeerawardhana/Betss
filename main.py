@@ -14,6 +14,8 @@ import schedule
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
+from api.backend_sender import send_payload_to_backend
+
 from api_fetcher import (
     fetch_api_1,
     fetch_api_2,
@@ -43,6 +45,9 @@ from horse_racing_db import (
     get_candidate_races_for_results,
     mark_race_results_fetched,
     set_race_results_fetch_error,
+    get_races_ready_for_backend,
+    build_backend_body_from_db,
+    mark_race_backend_sent,
 )
 
 load_dotenv(override=True)
@@ -89,6 +94,9 @@ RESULT_FETCH_DELAY_MINUTES = int(os.getenv("RESULT_FETCH_DELAY_MINUTES", 15))
 RESULT_CHECK_INTERVAL_SECONDS = int(os.getenv("RESULT_CHECK_INTERVAL_SECONDS", 30))
 RESULT_CANDIDATE_MAX_ROWS = int(os.getenv("RESULT_CANDIDATE_MAX_ROWS", 500))
 
+# Backend push interval (DB -> backend)
+BACKEND_PUSH_INTERVAL_SECONDS = int(os.getenv("BACKEND_PUSH_INTERVAL_SECONDS", 30))
+
 
 
 logging.basicConfig(
@@ -102,8 +110,41 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
-RACES_SECTION_RACING = "RACING"
-RACES_SECTION_VIRTUAL = "VIRTUAL"
+RACES_SECTION_RACING = "live"
+RACES_SECTION_VIRTUAL = "computer"
+
+
+def push_backend_from_db_cycle():
+    """Find races ready in DB and POST them to BACKEND_PORT."""
+    try:
+        race_ids = get_races_ready_for_backend(limit=50)
+    except Exception as err:
+        log.error("Backend DB cycle: failed selecting races: %s", err)
+        return
+
+    if not race_ids:
+        log.debug("Backend DB cycle: 0 race(s) ready")
+        return
+
+    log.info("Backend DB cycle: %s race(s) ready", len(race_ids))
+
+    for race_id in race_ids:
+        try:
+            body = build_backend_body_from_db(race_id)
+            if not body:
+                continue
+
+            ok = send_payload_to_backend(body, label=f"db_race_id={race_id}")
+            if ok:
+                mark_race_backend_sent(race_id)
+            else:
+                mark_race_backend_sent(race_id, error="backend_http_error")
+        except Exception as err:
+            log.error("Backend DB send failed for race_id=%s: %s", race_id, err)
+            try:
+                mark_race_backend_sent(race_id, error=str(err))
+            except Exception:
+                pass
 
 
 def _fetch_and_store_race_runners_for_races(race_ids):
@@ -233,6 +274,8 @@ def _fetch_and_store_race_runners_for_races_internal(
         except Exception as err:
             log.error("Per-race store failed for race_id=%s: %s", race_id, err)
             errors.append(f"store:{err}")
+
+        # Backend sending is done from DB on an interval (see push_backend_from_db_cycle).
 
         if mark_fetched:
             err_msg = "; ".join(errors) if errors else None
@@ -420,6 +463,10 @@ def _run_scheduler():
     if RESULT_CHECK_INTERVAL_SECONDS > 0:
         schedule.every(RESULT_CHECK_INTERVAL_SECONDS).seconds.do(fetch_due_race_results_cycle)
 
+    # Periodically push completed results from DB to backend.
+    if BACKEND_PUSH_INTERVAL_SECONDS > 0:
+        schedule.every(BACKEND_PUSH_INTERVAL_SECONDS).seconds.do(push_backend_from_db_cycle)
+
     summary = ", ".join([f"{t[0]}={t[1]}s" for t in enabled])
     log.info("Scheduler mode: %s. Due-check=%ss, delay=%s min. Press Ctrl+C to stop.", summary, RESULT_CHECK_INTERVAL_SECONDS, RESULT_FETCH_DELAY_MINUTES)
 
@@ -479,10 +526,17 @@ def main():
 
     if POLL_INTERVAL > 0:
         log.info(f"Real-time mode: polling every {POLL_INTERVAL} second(s). Press Ctrl+C to stop.")
+        last_backend_push = 0.0
         while True:
             try:
                 run_once()
                 fetch_due_race_results_cycle()
+
+                if BACKEND_PUSH_INTERVAL_SECONDS > 0:
+                    now_ts = time.time()
+                    if (now_ts - last_backend_push) >= BACKEND_PUSH_INTERVAL_SECONDS:
+                        push_backend_from_db_cycle()
+                        last_backend_push = now_ts
             except Exception as err:
                 log.error(f"Cycle error: {err}")
             time.sleep(POLL_INTERVAL)
@@ -490,6 +544,8 @@ def main():
         log.info("Single-run mode.")
         run_once()
         fetch_due_race_results_cycle()
+        if BACKEND_PUSH_INTERVAL_SECONDS > 0:
+            push_backend_from_db_cycle()
 
 
 if __name__ == "__main__":

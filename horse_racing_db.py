@@ -102,6 +102,8 @@ CREATE TABLE IF NOT EXISTS races (
     section           VARCHAR(20)     NULL,
     results_fetched_at DATETIME        NULL,
     results_fetch_error VARCHAR(500)   NULL,
+    backend_sent_at    DATETIME        NULL,
+    backend_send_error VARCHAR(500)    NULL,
     course_type       CHAR(2)         NULL,
     distance          VARCHAR(30)     NULL,
     no_of_runners     TINYINT         NULL,
@@ -636,6 +638,8 @@ def ensure_database_and_table():
             "ALTER TABLE races ADD COLUMN startTimeLocal DATETIME NULL;",
             "ALTER TABLE races ADD COLUMN results_fetched_at DATETIME NULL;",
             "ALTER TABLE races ADD COLUMN results_fetch_error VARCHAR(500) NULL;",
+            "ALTER TABLE races ADD COLUMN backend_sent_at DATETIME NULL;",
+            "ALTER TABLE races ADD COLUMN backend_send_error VARCHAR(500) NULL;",
             "ALTER TABLE race_runners ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;",
             "ALTER TABLE race_runners ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;",
             "ALTER TABLE race_runners ADD COLUMN description VARCHAR(255) NULL;",
@@ -696,6 +700,230 @@ def ensure_database_and_table():
     except mysql.connector.Error as err:
         log.error(f"Database setup failed: {err}")
         raise
+
+
+def get_races_ready_for_backend(limit: int = 50) -> list[int]:
+    """Race ids that have results in DBut not yet successfully sent to backend."""
+    limit = max(1, int(limit or 50))
+    conn = get_connection(with_db=True)
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+                        SELECT r.id AS race_id
+                        FROM races r
+                        WHERE r.backend_sent_at IS NULL
+                            AND EXISTS (
+                                SELECT 1
+                                FROM results res
+                                WHERE res.race_id = r.id
+                                    AND res.is_deleted = 0
+                            )
+            ORDER BY COALESCE(r.results_fetched_at, r.updated_at) ASC
+            LIMIT %s;
+            """,
+            (limit,),
+        )
+        rows = cursor.fetchall() or []
+        out: list[int] = []
+        for row in rows:
+            rid = row.get("race_id")
+            try:
+                out.append(int(rid))
+            except (TypeError, ValueError):
+                continue
+        return out
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def mark_race_backend_sent(race_id: int, *, error: str | None = None) -> None:
+    """Mark a race as sent to backend (or record send error)."""
+    if race_id is None:
+        return
+    try:
+        race_id = int(race_id)
+    except (TypeError, ValueError):
+        return
+
+    if error:
+        error = str(error)
+        if len(error) > 500:
+            error = error[:497] + "..."
+
+    conn = get_connection(with_db=True)
+    cursor = conn.cursor()
+    try:
+        if error:
+            cursor.execute(
+                "UPDATE races SET backend_send_error=%s WHERE id=%s;",
+                (error, race_id),
+            )
+        else:
+            cursor.execute(
+                "UPDATE races SET backend_sent_at=NOW(), backend_send_error=NULL WHERE id=%s;",
+                (race_id,),
+            )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
+    """Build the exact backend JSON body using DB tables.
+
+    JSON shape:
+    {
+      "raceName": <races.race_name>,
+      "bettingCenter": <meetings.meeting_name>,
+      "raceDate": <YYYY-MM-DD from races.start_time>,
+      "raceTime": <HH:MM:SS from races.start_time>,
+      "placeCount": <races.no_of_runners>,
+      "raceEntries": [{"number": ..., "horseName": ...}, ...],
+      "raceType": "WIN",
+      "isPast": true/false,
+      "scraperId": <races.id>,
+      "results": [{...}, ...]
+    }
+    """
+
+    if race_id is None:
+        return None
+    try:
+        race_id = int(race_id)
+    except (TypeError, ValueError):
+        return None
+
+    conn = get_connection(with_db=True)
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute(
+            """
+            SELECT
+                r.id AS race_id,
+                r.race_name,
+                r.start_time,
+                r.no_of_runners,
+                r.is_settled,
+                m.meeting_name
+            FROM races r
+            INNER JOIN meetings m ON m.id = r.meeting_id
+            WHERE r.id = %s
+            LIMIT 1;
+            """,
+            (race_id,),
+        )
+        race = cursor.fetchone()
+        if not race:
+            return None
+
+        start_time = race.get("start_time")
+        race_date = ""
+        race_time = ""
+        if isinstance(start_time, datetime):
+            race_date = start_time.date().isoformat()
+            race_time = start_time.time().replace(microsecond=0).isoformat()
+
+        place_count = race.get("no_of_runners")
+        try:
+            place_count_int = int(place_count) if place_count is not None else 0
+        except (TypeError, ValueError):
+            place_count_int = 0
+
+        is_settled = bool(race.get("is_settled"))
+        is_past = is_settled
+        if isinstance(start_time, datetime):
+            is_past = is_past or (datetime.now() >= start_time)
+
+        # Race entries (runners for this race)
+        cursor.execute(
+            """
+            SELECT
+                rr.number AS rr_number,
+                ru.runner_id AS runner_code,
+                ru.runner_name AS runner_name,
+                ru.id AS runner_pk
+            FROM race_runners rr
+            INNER JOIN runners ru ON ru.id = rr.runner_id
+            WHERE rr.race_id = %s
+            ORDER BY (rr.number IS NULL) ASC, rr.number ASC, ru.runner_name ASC;
+            """,
+            (race_id,),
+        )
+        entries_rows = cursor.fetchall() or []
+        race_entries: list[dict[str, object]] = []
+        for row in entries_rows:
+            horse_name = row.get("runner_name") or ""
+            # User mapping: number comes from runners.runner_id.
+            number: object | None = row.get("runner_code")
+            if number is None:
+                number = row.get("rr_number")
+            if number is None:
+                number = row.get("runner_pk")
+            race_entries.append({"number": number, "horseName": horse_name})
+
+        # Results
+        cursor.execute(
+            """
+            SELECT
+                res.position AS position,
+                res.win AS win_value,
+                res.place AS place_value,
+                rr.number AS rr_number,
+                ru.runner_name AS runner_name
+            FROM results res
+            INNER JOIN race_runners rr ON rr.id = res.race_runner_id
+            INNER JOIN runners ru ON ru.id = res.runner_id
+            WHERE res.race_id = %s
+              AND res.is_deleted = 0
+            ORDER BY res.position ASC;
+            """,
+            (race_id,),
+        )
+        results_rows = cursor.fetchall() or []
+        results_out: list[dict[str, object]] = []
+        for row in results_rows:
+            pos = row.get("position")
+            runner_name = row.get("runner_name") or ""
+            rr_number = row.get("rr_number")
+            selection = runner_name
+            if rr_number is not None:
+                selection = f"({rr_number}) {runner_name}" if runner_name else f"({rr_number})"
+
+            win_value = row.get("win_value")
+            place_value = row.get("place_value")
+            win_str = "" if win_value is None else str(win_value)
+            place_str = "" if place_value is None else str(place_value)
+
+            results_out.append(
+                {
+                    "selection": selection,
+                    "place": "" if pos is None else str(pos),
+                    "win_odds": win_str,
+                    "place_odds": place_str,
+                    "win_odd": win_str,
+                    "win_place_odd": place_str,
+                }
+            )
+
+        body: dict[str, object] = {
+            "raceName": race.get("race_name") or "",
+            "bettingCenter": race.get("meeting_name") or "",
+            "raceDate": race_date,
+            "raceTime": race_time,
+            "placeCount": place_count_int,
+            "raceEntries": race_entries,
+            "raceType": "WIN",
+            "isPast": bool(is_past),
+            "scraperId": race_id,
+            "results": results_out,
+        }
+        return body
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # ─────────────────────────────────────────────
