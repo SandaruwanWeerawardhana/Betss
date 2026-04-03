@@ -855,15 +855,9 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
         )
         entries_rows = cursor.fetchall() or []
         race_entries: list[dict[str, object]] = []
-        for row in entries_rows:
+        for idx, row in enumerate(entries_rows, start=1):
             horse_name = row.get("runner_name") or ""
-            # User mapping: number comes from runners.runner_id.
-            number: object | None = row.get("runner_code")
-            if number is None:
-                number = row.get("rr_number")
-            if number is None:
-                number = row.get("runner_pk")
-            race_entries.append({"number": number, "horseName": horse_name})
+            race_entries.append({"number": idx, "horseName": horse_name})
 
         # Results
         cursor.execute(
