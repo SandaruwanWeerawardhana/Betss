@@ -275,7 +275,24 @@ def _fetch_and_store_race_runners_for_races_internal(
             log.error("Per-race store failed for race_id=%s: %s", race_id, err)
             errors.append(f"store:{err}")
 
-        # Backend sending is done from DB on an interval (see push_backend_from_db_cycle).
+        # Send to backend immediately (one-by-one) once we have results for this race.
+        # This preserves the existing DB-based payload shape and backend_sent_at tracking.
+        if had_results and stored_count > 0:
+            try:
+                body = build_backend_body_from_db(race_id)
+                results_list = body.get("results") if isinstance(body, dict) else None
+                if body and isinstance(results_list, list) and len(results_list) > 0:
+                    ok = send_payload_to_backend(body, label=f"race_id={race_id}")
+                    if ok:
+                        mark_race_backend_sent(race_id)
+                    else:
+                        mark_race_backend_sent(race_id, error="backend_http_error")
+            except Exception as err:
+                log.error("Backend immediate send failed for race_id=%s: %s", race_id, err)
+                try:
+                    mark_race_backend_sent(race_id, error=str(err))
+                except Exception:
+                    pass
 
         if mark_fetched:
             err_msg = "; ".join(errors) if errors else None
