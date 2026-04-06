@@ -908,7 +908,7 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
             "bettingCenter": race.get("meeting_name") or "",
             "raceDate": race_date,
             "raceTime": race_time,
-            "placeCount": place_count_int,
+            "placeCount": len(results_out),
             "raceEntries": race_entries,
             "raceType": race.get("section"),
             "isPast": bool(is_past),

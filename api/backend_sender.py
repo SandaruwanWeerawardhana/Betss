@@ -38,6 +38,19 @@ def _normalize_payload(payload: Any) -> Any:
     return payload
 
 
+def _ensure_place_count_matches_results(payload: Any) -> Any:
+    if not isinstance(payload, dict):
+        return payload
+
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return payload
+
+    body = dict(payload)
+    body["placeCount"] = len(results)
+    return body
+
+
 def send_payload_to_backend(payload: Any, *, label: str = "scrap-to-server") -> bool:
     url = (os.getenv("BACKEND_PORT") or "").strip()
     enabled = _env_bool("BACKEND_ENABLED", True)
@@ -66,6 +79,7 @@ def send_payload_to_backend(payload: Any, *, label: str = "scrap-to-server") -> 
     }
 
     payload = _normalize_payload(payload)
+    payload = _ensure_place_count_matches_results(payload)
 
     try:
         body = json.dumps(payload, ensure_ascii=False)

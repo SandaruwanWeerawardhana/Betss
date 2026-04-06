@@ -64,6 +64,11 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
 
     # If the payload is already in backend shape, just pass through.
     if isinstance(payload, dict) and "raceName" in payload and "results" in payload:
+        results = payload.get("results")
+        if isinstance(results, list):
+            body = dict(payload)
+            body["placeCount"] = len(results)
+            return BackendRaceBody(body=body)
         return BackendRaceBody(body=payload)
 
     # Try to locate the race object.
@@ -222,7 +227,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
         "bettingCenter": betting_center,
         "raceDate": race_date or "",
         "raceTime": race_time or "",
-        "placeCount": place_count if place_count is not None else 0,
+        "placeCount": len(results_out),
         "raceType": section,
         "isPast": bool(is_past),
         "results": results_out,
