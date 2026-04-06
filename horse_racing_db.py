@@ -833,10 +833,9 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
         except (TypeError, ValueError):
             place_count_int = 0
 
-        is_settled = bool(race.get("is_settled"))
-        is_past = is_settled
-        if isinstance(start_time, datetime):
-            is_past = is_past or (datetime.now() >= start_time)
+        is_past = False
+        if (datetime.now() >= start_time):
+            is_past = True
 
         # Race entries (runners for this race)
         cursor.execute(
