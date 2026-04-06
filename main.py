@@ -117,7 +117,7 @@ RACES_SECTION_VIRTUAL = "computer"
 def push_backend_from_db_cycle():
     """Find races ready in DB and POST them to BACKEND_PORT."""
     try:
-        race_ids = get_races_ready_for_backend(limit=50)
+        race_ids = get_races_ready_for_backend(limit=999999)
     except Exception as err:
         log.error("Backend DB cycle: failed selecting races: %s", err)
         return
