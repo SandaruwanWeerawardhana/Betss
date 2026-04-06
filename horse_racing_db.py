@@ -702,7 +702,7 @@ def ensure_database_and_table():
         raise
 
 
-def get_races_ready_for_backend(limit: int = 50) -> list[int]:
+def get_races_ready_for_backend(limit: int = 999999) -> list[int]:
     """Race ids that have results in DBut not yet successfully sent to backend."""
     limit = max(1, int(limit or 50))
     conn = get_connection(with_db=True)
@@ -778,8 +778,8 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
     {
       "raceName": <races.race_name>,
       "bettingCenter": <meetings.meeting_name>,
-      "raceDate": <YYYY-MM-DD from races.start_time>,
-      "raceTime": <HH:MM:SS from races.start_time>,
+    "raceDate": <YYYY-MM-DD from races.startTimeLocal>,
+    "raceTime": <HH:MM:SS from races.startTimeLocal>,
       "placeCount": <races.no_of_runners>,
       "raceEntries": [{"number": ..., "horseName": ...}, ...],
       "raceType": <races.section>,
@@ -806,6 +806,8 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
                 r.race_name,
                 r.section,
                 r.start_time,
+                r.startTimeLocal AS start_time_local,
+                r.off_time,
                 r.no_of_runners,
                 r.is_settled,
                 m.meeting_name
@@ -820,12 +822,15 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
         if not race:
             return None
 
+        start_time_local = race.get("start_time_local")
         start_time = race.get("start_time")
+        start_dt_local = start_time_local if isinstance(start_time_local, datetime) else None
+
         race_date = ""
         race_time = ""
-        if isinstance(start_time, datetime):
-            race_date = start_time.date().isoformat()
-            race_time = start_time.time().replace(microsecond=0).isoformat()
+        if start_dt_local is not None:
+            race_date = start_dt_local.date().isoformat()
+            race_time = start_dt_local.time().replace(microsecond=0).isoformat()
 
         place_count = race.get("no_of_runners")
         try:
@@ -834,8 +839,13 @@ def build_backend_body_from_db(race_id: int) -> dict[str, object] | None:
             place_count_int = 0
 
         is_past = False
-        if (datetime.now() >= start_time):
-            is_past = True
+        now = datetime.now()
+        if start_dt_local is not None:
+            is_past = now >= start_dt_local
+        elif isinstance(start_time, datetime):
+            is_past = now >= start_time
+        else:
+            is_past = bool(race.get("is_settled"))
 
         # Race entries (runners for this race)
         cursor.execute(
@@ -1068,7 +1078,7 @@ def store_records(records, *, section: str | None = None):
                 _to_int(race.get("raceNumber")),
                 _parse_dt(race.get("startTime")),
                 _parse_dt(race.get("startTimeUtc")),
-                _parse_dt(race.get("startTimeLocal")),
+                _parse_dt(race.get("startTimeLocal") or race.get("start_time_local")),
                 section_value,
                 race.get("courseType"),
                 race.get("distance"),
@@ -1550,6 +1560,7 @@ def store_records(records, *, section: str | None = None):
                 "raceName": rr.get("raceName"),
                 "raceNumber": rr.get("raceNumber"),
                 "startTime": rr.get("startTime") or rr.get("eventDate"),
+                "startTimeLocal": rr.get("startTimeLocal") or rr.get("start_time_local"),
                 "offTime": rr.get("offtime") or rr.get("offTime"),
                 "source": rr.get("raceSource"),
             }

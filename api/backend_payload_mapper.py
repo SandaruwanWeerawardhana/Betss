@@ -108,7 +108,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
             "raceName": sample.get("race_id"),
             "raceNumber": sample.get("raceNumber"),
             "startTime": sample.get("startTime") or sample.get("eventDate"),
-            "startTimeLocal": sample.get("startTimeLocal"),
+            "startTimeLocal": sample.get("startTimeLocal") or sample.get("start_time_local"),
             "eachwayPlaces": sample.get("eachwayPlaces"),
             "expectedPlaces": sample.get("expectedPlaces"),
             "raceRunners": rr_items,
@@ -119,8 +119,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
 
     race_name = _to_str(race_obj.get("raceName"))
     race_number = _to_int(race_obj.get("raceNumber"))
-    start_dt_local = _parse_dt(race_obj.get("startTimeLocal"))
-    start_dt = start_dt_local or _parse_dt(race_obj.get("startTime") or race_obj.get("offTime"))
+    start_dt_local = _parse_dt(race_obj.get("startTimeLocal") or race_obj.get("start_time_local"))
 
     if not race_name:
         if race_number is not None:
@@ -128,17 +127,18 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
         else:
             race_name = f"Race {race_id}"
 
-    race_date = None
-    race_time = None
-    if start_dt is not None:
-        race_date = start_dt.date().isoformat()
-        race_time = start_dt.time().replace(microsecond=0).isoformat()
+    # Use startTimeLocal specifically for raceDate and raceTime
+    race_date = ""
+    race_time = ""
+    if start_dt_local is not None:
+        race_date = start_dt_local.date().isoformat()
+        race_time = start_dt_local.time().replace(microsecond=0).isoformat()
 
     place_count = _to_int(race_obj.get("placeCount") or race_obj.get("eachwayPlaces") or race_obj.get("expectedPlaces"))
 
     is_past = False
     if start_dt_local is not None:
-        is_past = start_dt_local.date() < datetime.now().date()
+        is_past = start_dt_local.date() >= datetime.now().date()
 
     section = _to_str(race_obj.get("section"))
 
@@ -229,6 +229,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
         "raceTime": race_time or "",
         "placeCount": len(results_out),
         "raceType": section,
+        # "isPast": bool(is_past),
         "isPast": bool(is_past),
         "results": results_out,
     }
