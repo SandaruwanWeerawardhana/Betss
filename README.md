@@ -23,6 +23,160 @@ The app:
 - MySQL Server 8+
 - A user with permission to create databases/tables
 
+## Full Setup (New Computer)
+
+This section is a step-by-step checklist to set up the project on a fresh machine.
+
+### 1) Install prerequisites
+
+#### Install Python
+
+- Install **Python 3.9+**
+- Make sure Python is on your PATH (Windows installer option: **"Add python.exe to PATH"**)
+
+Verify:
+
+```bash
+python --version
+pip --version
+```
+
+#### Install MySQL Server
+
+- Install **MySQL Server 8+**
+- Make sure the MySQL service is running
+- Note your host/port (defaults: `localhost:3306`)
+
+Optional: install MySQL Workbench or any SQL client for testing.
+
+##### Create a database user (recommended)
+
+You can use `root`, but it’s better to create a dedicated user for this scraper.
+
+Run the following in MySQL (Workbench / CLI):
+
+```sql
+CREATE USER 'scraper_user'@'localhost' IDENTIFIED BY 'your_strong_password';
+GRANT ALL PRIVILEGES ON *.* TO 'scraper_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+Notes:
+- The app will create the database and tables automatically (if the user has permission).
+- For locked-down environments, you can grant privileges only to the target database after it exists.
+
+### 2) Get the project onto the new computer
+
+Choose one:
+
+#### Option A: Clone with Git
+
+```bash
+git clone <YOUR_REPO_URL>
+cd Botss
+```
+
+#### Option B: Copy the folder
+
+- Copy the entire `Botss` folder to the new computer.
+- Open the folder in VS Code.
+
+### 3) Create the `.env` file
+
+In the project root, create `.env` and set values:
+
+```env
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=scraper_user
+DB_PASSWORD=your_strong_password
+DB_NAME=scraper_db
+
+HORSE_API_1_URL=https://
+HORSE_API_2_URL=https://
+HORSE_API_3_URL=https://
+HORSE_API_4_URL=https://
+
+# 0 = run once and exit
+# >0 = polling mode, value is seconds between cycles
+POLL_INTERVAL=0
+
+# Optional: only needed if you want time-gated per-race detail calls
+RESULT_FETCH_DELAY_MINUTES=15
+RESULT_CHECK_INTERVAL_SECONDS=30
+RESULT_CANDIDATE_MAX_ROWS=500
+```
+
+### 4) Create a virtual environment + install dependencies
+
+#### Windows (PowerShell)
+
+```powershell
+cd <path-to-Botss>
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install requests python-dotenv mysql-connector-python schedule tzdata
+```
+
+If PowerShell blocks activation, run:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+#### Mac / Linux
+
+```bash
+cd /path/to/Botss
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install requests python-dotenv mysql-connector-python schedule tzdata
+```
+
+### 5) First run (creates DB/tables automatically)
+
+Run:
+
+```bash
+python main.py
+```
+
+What to expect:
+- On startup it creates the database (`DB_NAME`) if missing
+- It creates tables if missing
+- It fetches API payload(s) and upserts data
+- Logs are written to console and `scraper.log`
+
+### 6) Verify it worked
+
+- Check the console output for successful connection and upserts
+- Open `scraper.log` for the detailed trace
+- In MySQL, confirm the database and tables exist:
+
+```sql
+SHOW DATABASES;
+USE scraper_db;
+SHOW TABLES;
+```
+
+### 7) (Optional) Enable polling or per-endpoint scheduling
+
+- **Single-run**: `POLL_INTERVAL=0`
+- **Polling mode** (run every N seconds): set `POLL_INTERVAL` to a value like `30`
+- **Scheduler mode** (each endpoint on its own cadence): set any `HORSE_API_*_INTERVAL` (or virtual intervals)
+
+Example:
+
+```env
+POLL_INTERVAL=0
+HORSE_API_1_INTERVAL=15
+HORSE_API_2_INTERVAL=30
+HORSE_API_3_INTERVAL=300
+HORSE_API_4_INTERVAL=3600
+```
+
 ## Python Dependencies
 
 Install these packages:
@@ -83,10 +237,11 @@ Notes:
 ### Windows PowerShell
 
 ```powershell
-cd d:\Project\Botss
+cd <path-to-Botss>
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install requests python-dotenv mysql-connector-python
+python -m pip install --upgrade pip
+pip install requests python-dotenv mysql-connector-python schedule tzdata
 python .\main.py
 ```
 
@@ -96,7 +251,8 @@ python .\main.py
 cd /path/to/Botss
 python3 -m venv .venv
 source .venv/bin/activate
-pip install requests python-dotenv mysql-connector-python
+python -m pip install --upgrade pip
+pip install requests python-dotenv mysql-connector-python schedule tzdata
 python main.py
 ```
 
