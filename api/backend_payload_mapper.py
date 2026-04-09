@@ -229,7 +229,6 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
         "raceTime": race_time or "",
         "placeCount": len(results_out),
         "raceType": section,
-        # "isPast": bool(is_past),
         "isPast": bool(is_past),
         "results": results_out,
     }

@@ -303,7 +303,7 @@ ON DUPLICATE KEY UPDATE
     race_number=VALUES(race_number),
     start_time=VALUES(start_time),
     start_time_utc=VALUES(start_time_utc),
-    startTimeLocal=VALUES(startTimeLocal),
+    startTimeLocal=COALESCE(VALUES(startTimeLocal), startTimeLocal),
     section=COALESCE(VALUES(section), section),
     course_type=VALUES(course_type),
     distance=VALUES(distance),
@@ -691,6 +691,15 @@ def ensure_database_and_table():
         except mysql.connector.Error as err:
             log.debug(f"Skipping results unique key creation: {err}")
 
+        # Ensure startTimeLocal is not missing when start_time exists.
+        # Some payloads do not provide startTimeLocal; we treat start_time as the local wall-clock fallback.
+        try:
+            cursor.execute(
+                "UPDATE races SET startTimeLocal = start_time WHERE startTimeLocal IS NULL AND start_time IS NOT NULL;"
+            )
+        except mysql.connector.Error as err:
+            log.debug(f"Skipping startTimeLocal backfill: {err}")
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -1068,6 +1077,13 @@ def store_records(records, *, section: str | None = None):
         if race_pk is None:
             return None
 
+        # Important: many payloads omit startTimeLocal.
+        # - We do NOT overwrite an existing DB startTimeLocal with NULL.
+        # - If startTimeLocal is missing, we backfill it from start_time (treated as local wall-clock).
+        start_dt = _parse_dt(race.get("startTime") or race.get("eventDate"))
+        start_dt_utc = _parse_dt(race.get("startTimeUtc") or race.get("start_time_utc"))
+        start_dt_local = _parse_dt(race.get("startTimeLocal") or race.get("start_time_local"))
+
         cursor.execute(
             INSERT_RACE_SQL,
             (
@@ -1076,9 +1092,9 @@ def store_records(records, *, section: str | None = None):
                 race.get("raceId"),
                 race.get("raceName"),
                 _to_int(race.get("raceNumber")),
-                _parse_dt(race.get("startTime")),
-                _parse_dt(race.get("startTimeUtc")),
-                _parse_dt(race.get("startTimeLocal") or race.get("start_time_local")),
+                start_dt,
+                start_dt_utc,
+                start_dt_local,
                 section_value,
                 race.get("courseType"),
                 race.get("distance"),
@@ -1107,6 +1123,12 @@ def store_records(records, *, section: str | None = None):
                 _bool_int(race.get("isDeleted"), 0),
             ),
         )
+
+        if start_dt_local is None and start_dt is not None:
+            cursor.execute(
+                "UPDATE races SET startTimeLocal = COALESCE(startTimeLocal, start_time) WHERE id = %s;",
+                (race_pk,),
+            )
         return race_pk
 
     def _upsert_race_minimal(cursor, race_id: int, meeting_id: int, *, section_value: str | None = None):
