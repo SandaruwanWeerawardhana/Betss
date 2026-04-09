@@ -138,7 +138,7 @@ def map_payload_to_backend_body(*, race_id: int, payload: Any) -> BackendRaceBod
 
     is_past = False
     if start_dt_local is not None:
-        is_past = start_dt_local.date() >= datetime.now().date()
+        is_past = datetime.now() >= start_dt_local
 
     section = _to_str(race_obj.get("section"))
 
